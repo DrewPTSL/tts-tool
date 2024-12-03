@@ -7,8 +7,8 @@ import re
 from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
 from openpyxl import Workbook
 
-# Step 1: Read the text file and extract GTA06 origins
-with open(r"C:\Temp\TTS\PM.txt", "r") as file:
+# Step 1: Read the TTS Text File and extract GTA06 origins
+with open(r"TTSAM.txt", "r") as file:
     content = file.read()
     lines = file.readlines()
 
@@ -19,7 +19,7 @@ df_origins = pd.DataFrame(matches, columns=["gta06_orig", "gta06_dest", "total"]
 df_origins = df_origins.astype({"gta06_orig": int, "gta06_dest": int, "total": int})
 
 # Read zones CSV
-zones_df = pd.read_csv(r'c:\Temp\TTS\Zones.csv')
+zones_df = pd.read_csv(r'Zones.csv')
 
 # Merge to get latitude and longitude for origins and destinations
 origins_df = zones_df.merge(df_origins, left_on='GTA06', right_on='gta06_orig')
@@ -27,8 +27,8 @@ destinations_df = zones_df.merge(df_origins, left_on='GTA06', right_on='gta06_de
 
 
 # Your site coordinates and zone
-site_lat = 43.21234991252324
-site_lon = -79.77276372742706
+site_coords = "43.212342441568325, -79.77345451007199"  # Format: "latitude, longitude"
+site_lat, site_lon = map(float, site_coords.split(','))
 
 site_zone = 5241
 
@@ -37,12 +37,14 @@ pois = [
     {
         'id': 'POI_1',
         'name': 'South via Greenhill Avenue',
-        'coordinates': (43.21107989319771, -79.77681496454343)
+        'coordinates': (43.21107989319771, -79.77681496454343),
+        'threshold': 0.05  # 50 meters
     },
     {
         'id': 'POI_2', 
         'name': 'North via Greenhill Avenue',
-        'coordinates': (43.21516364199378, -79.7747902086894)
+        'coordinates': (43.21516364199378, -79.7747902086894),
+        'threshold': 0.1   # 100 meters
     }
 ]
 
@@ -61,12 +63,15 @@ def passes_through(route_geometry, poi_list, threshold=0.1):
     
     for route_point in route_coords:
         for poi in poi_list:
+            poi_threshold = poi.get('threshold', threshold)  # Use POI-specific threshold or default
             distance = geodesic(route_point, poi['coordinates']).km
-            if distance <= threshold:
+            if distance <= poi_threshold:
                 matching_pois.append({
                     'id': poi['id'],
                     'name': poi['name'],
-                    'coordinates': poi['coordinates']
+                    'coordinates': poi['coordinates'],
+                    'threshold': poi_threshold,
+                    'actual_distance': distance
                 })
     
     # Remove duplicate POIs
@@ -116,56 +121,134 @@ for index, row in df_origins.iterrows():
     # Debugging: Print current route details
     print(f"Processing route: Origin {origin_id}, Destination {dest_id}")
     
+    # Check if origin zone exists in zones_df
+    origin_row = zones_df[zones_df['GTA06'] == origin_id]
+    if origin_row.empty:
+        print(f"WARNING: Origin zone {origin_id} not found in Zones.csv")
+        results.append({
+            'origin_id': origin_id,
+            'dest_id': dest_id,
+            'route_type': 'origin_to_site' if dest_id == site_zone else 'unknown',
+            'passes': False,
+            'num_pois_intersected': 0,
+            'intersected_pois_ids': [f'Error: Origin zone {origin_id} not found in Zones.csv'],
+            'intersected_pois_names': [],
+            'intersected_pois_details': []
+        })
+        continue  # Skip route processing but still include in results
+    
     # Check if destination zone exists in zones_df
     dest_row = zones_df[zones_df['GTA06'] == dest_id]
     if dest_row.empty:
         print(f"WARNING: Destination zone {dest_id} not found in Zones.csv")
-        continue  # Skip this route
+        results.append({
+            'origin_id': origin_id,
+            'dest_id': dest_id,
+            'route_type': 'site_to_destination' if origin_id == site_zone else 'unknown',
+            'passes': False,
+            'num_pois_intersected': 0,
+            'intersected_pois_ids': [f'Error: Destination zone {dest_id} not found in Zones.csv'],
+            'intersected_pois_names': [],
+            'intersected_pois_details': []
+        })
+        continue  # Skip route processing but still include in results
     
+    # Safely extract origin coordinates
+    try:
+        origin_lat = origin_row['Latitude'].values[0]
+        origin_lon = origin_row['Longitude'].values[0]
+    except IndexError:
+        print(f"ERROR: Could not extract coordinates for origin zone {origin_id}")
+        results.append({
+            'origin_id': origin_id,
+            'dest_id': dest_id,
+            'route_type': 'origin_to_site' if dest_id == site_zone else 'unknown',
+            'passes': False,
+            'num_pois_intersected': 0,
+            'intersected_pois_ids': [f'Error: Could not extract coordinates for origin zone {origin_id}'],
+            'intersected_pois_names': [],
+            'intersected_pois_details': []
+        })
+        continue
+        
     # Safely extract destination coordinates
     try:
         dest_lat = dest_row['Latitude'].values[0]
         dest_lon = dest_row['Longitude'].values[0]
     except IndexError:
         print(f"ERROR: Could not extract coordinates for destination zone {dest_id}")
+        results.append({
+            'origin_id': origin_id,
+            'dest_id': dest_id,
+            'route_type': 'site_to_destination' if origin_id == site_zone else 'unknown',
+            'passes': False,
+            'num_pois_intersected': 0,
+            'intersected_pois_ids': [f'Error: Could not extract coordinates for destination zone {dest_id}'],
+            'intersected_pois_names': [],
+            'intersected_pois_details': []
+        })
         continue
     
     # Case 1: Both origin and destination are the site zone (highest priority)
     if origin_id == site_zone and dest_id == site_zone:
-        # Route from site to site zone
-        route1 = get_route(site_lat, site_lon, site_zone_lat, site_zone_lon)
+        # Route from site zone to site (origin_to_site)
+        route1 = get_route(site_zone_lat, site_zone_lon, site_lat, site_lon)
         
-        # Route from site zone back to site
-        route2 = get_route(site_zone_lat, site_zone_lon, site_lat, site_lon)
+        # Route from site to site zone (site_to_destination)
+        route2 = get_route(site_lat, site_lon, site_zone_lat, site_zone_lon)
         
         routes.extend([route1, route2])
         
-        # Check POIs for both routes
-        for i, route in enumerate([route1, route2]):
-            if route:
-                poi_check_result = passes_through(route, pois, threshold=0.05)
-                results.append({
-                    'origin_id': origin_id, 
-                    'dest_id': dest_id,
-                    'route_type': f'site_to_site_{i+1}',
-                    'passes': poi_check_result['passes'], 
-                    'num_pois_intersected': poi_check_result['num_pois_intersected'],
-                    'intersected_pois_ids': [poi['id'] for poi in poi_check_result['intersected_pois']],
-                    'intersected_pois_names': [poi['name'] for poi in poi_check_result['intersected_pois']],
-                    'intersected_pois_details': poi_check_result['intersected_pois']
-                })
-            else:
-                results.append({
-                    'origin_id': origin_id, 
-                    'dest_id': dest_id,
-                    'route_type': f'site_to_site_{i+1}',
-                    'passes': False, 
-                    'num_pois_intersected': 0,
-                    'intersected_pois_ids': [],
-                    'intersected_pois_names': [],
-                    'intersected_pois_details': []
-                })
-        continue  # Skip to next iteration after processing site_to_site routes
+        # Process origin_to_site route
+        if route1:
+            poi_check_result = passes_through(route1, pois, threshold=0.05)
+            results.append({
+                'origin_id': origin_id, 
+                'dest_id': dest_id,
+                'route_type': 'origin_to_site',
+                'passes': poi_check_result['passes'], 
+                'num_pois_intersected': poi_check_result['num_pois_intersected'],
+                'intersected_pois_ids': [poi['id'] for poi in poi_check_result['intersected_pois']],
+                'intersected_pois_names': [poi['name'] for poi in poi_check_result['intersected_pois']],
+                'intersected_pois_details': poi_check_result['intersected_pois']
+            })
+        else:
+            results.append({
+                'origin_id': origin_id, 
+                'dest_id': dest_id,
+                'route_type': 'origin_to_site',
+                'passes': False, 
+                'num_pois_intersected': 0,
+                'intersected_pois_ids': [],
+                'intersected_pois_names': [],
+                'intersected_pois_details': []
+            })
+
+        # Process site_to_destination route
+        if route2:
+            poi_check_result = passes_through(route2, pois, threshold=0.05)
+            results.append({
+                'origin_id': origin_id, 
+                'dest_id': dest_id,
+                'route_type': 'site_to_destination',
+                'passes': poi_check_result['passes'], 
+                'num_pois_intersected': poi_check_result['num_pois_intersected'],
+                'intersected_pois_ids': [poi['id'] for poi in poi_check_result['intersected_pois']],
+                'intersected_pois_names': [poi['name'] for poi in poi_check_result['intersected_pois']],
+                'intersected_pois_details': poi_check_result['intersected_pois']
+            })
+        else:
+            results.append({
+                'origin_id': origin_id, 
+                'dest_id': dest_id,
+                'route_type': 'site_to_destination',
+                'passes': False, 
+                'num_pois_intersected': 0,
+                'intersected_pois_ids': [],
+                'intersected_pois_names': [],
+                'intersected_pois_details': []
+            })
+        continue  # Skip to next iteration after processing routes
     
     # Case 2: Origin is not the site zone (route from origin to site)
     if origin_id != site_zone and dest_id == site_zone:
@@ -243,17 +326,28 @@ results_df = results_df.merge(df_origins[['gta06_orig', 'gta06_dest', 'total']],
                                right_on=['gta06_orig', 'gta06_dest'], 
                                how='left')
 
-results_df['intersected_pois_ids'] = results_df['intersected_pois_ids'].apply(
-    lambda x: ', '.join(x) if isinstance(x, list) else x
-)
+# Create POI Summary DataFrame
+poi_summary_df = pd.DataFrame([
+    {
+        'Location Type': poi['name'], 
+        'POI_ID': poi['id'], 
+        'Latitude': poi['coordinates'][0],
+        'Longitude': poi['coordinates'][1],
+        'Threshold (km)': poi['threshold']
+    } for poi in pois
+])
 
-# Select and rename the desired columns
-export_df = results_df[['origin_id', 'dest_id', 'route_type', 'intersected_pois_ids', 'total']].copy()
-export_df.columns = ['origin_id', 'dest_id', 'route_type', 'intersected_ids', 'total']
+# Convert lists to strings for Excel output, ensuring uniqueness
+results_df['intersected_pois_ids'] = results_df['intersected_pois_ids'].apply(lambda x: ', '.join(list(dict.fromkeys(x))) if isinstance(x, list) else x)
+results_df['intersected_pois_names'] = results_df['intersected_pois_names'].apply(lambda x: ', '.join(list(dict.fromkeys(x))) if isinstance(x, list) else x)
+
+# Export to Excel
+export_df = results_df[['origin_id', 'dest_id', 'route_type', 'intersected_pois_ids', 'intersected_pois_names', 'total']].copy()
+export_df.columns = ['origin_id', 'dest_id', 'route_type', 'intersected_ids', 'intersected_names', 'total']
 
 # Save to Excel
-export_df.to_excel("PM.xlsx", index=False)
-print("Results saved to scs.xlsx")
+export_df.to_excel("Output.xlsx", index=False)
+print("Results saved to Output.xlsx")
 
 # Create POI Summary DataFrame
 poi_summary_df = pd.DataFrame([
@@ -261,7 +355,8 @@ poi_summary_df = pd.DataFrame([
         'Location Type': poi['name'], 
         'POI_ID': poi['id'], 
         'Latitude': poi['coordinates'][0],
-        'Longitude': poi['coordinates'][1]
+        'Longitude': poi['coordinates'][1],
+        'Threshold (km)': poi['threshold']
     } for poi in pois
 ])
 
@@ -277,7 +372,7 @@ site_summary_df = pd.DataFrame([{
 }])
 
 # Create an Excel writer
-with pd.ExcelWriter('PM.xlsx', engine='openpyxl') as writer:
+with pd.ExcelWriter('Output.xlsx', engine='openpyxl') as writer:
     # Write the main results sheet
     workbook = writer.book
     wb = Workbook()
@@ -313,12 +408,8 @@ with pd.ExcelWriter('PM.xlsx', engine='openpyxl') as writer:
     
     # Get the workbook and create a new sheet for calculations
     workbook = writer.book
-    calc_sheet = workbook.create_sheet(title='POI Traffic Analysis')
+    calc_sheet = workbook.create_sheet(title='POI Traffic Analysis') 
 
-    
-    
-
-    
     # Set up headers
     calc_sheet['B2'] = 'From/To'
     
@@ -335,10 +426,10 @@ with pd.ExcelWriter('PM.xlsx', engine='openpyxl') as writer:
     # Create formulas for each POI using SUMIFS
     for idx, poi in enumerate(pois, start=3):
         # Formula for In traffic (origin_to_site)
-        calc_sheet[f'C{idx}'] = f'=SUMIFS(\'Route Results\'!E:E,\'Route Results\'!C:C,"origin_to_site",\'Route Results\'!D:D,"{poi["id"]}")'
+        calc_sheet[f'C{idx}'] = f'=SUMIFS(\'Route Results\'!F:F,\'Route Results\'!C:C,"origin_to_site",\'Route Results\'!D:D,"{poi["id"]}")'
         
         # Formula for Out traffic (site_to_destination)
-        calc_sheet[f'E{idx}'] = f'=SUMIFS(\'Route Results\'!E:E,\'Route Results\'!C:C,"site_to_destination",\'Route Results\'!D:D,"{poi["id"]}")'
+        calc_sheet[f'E{idx}'] = f'=SUMIFS(\'Route Results\'!F:F,\'Route Results\'!C:C,"site_to_destination",\'Route Results\'!D:D,"{poi["id"]}")'
 
     # Adding the "Total" row below the last POI
     total_row = len(pois) + 3  # Calculate the row number for the "Total" row
@@ -426,16 +517,23 @@ with pd.ExcelWriter('PM.xlsx', engine='openpyxl') as writer:
     # Adjust the column width (adding a little extra for padding)
     calc_sheet.column_dimensions[column_letter].width = max_length + 2
 
-    
+print("\nRoute Summary:")
+print(results_df.groupby('route_type')['passes'].sum())
+print("\nTotal Routes with POI Matches:", results_df['passes'].sum())
+print("Total Routes without POI Matches:", len(results_df) - results_df['passes'].sum())
 
-
-# Adjust column widths if needed
-
-print("Results saved to scs.xlsx with two sheets:")
-print("1. Route Results")
-print("2. Location Details")
-
-
+# Print detailed breakdown by route type
+print("\nDetailed Breakdown by Route Type:")
+route_types = results_df.groupby('route_type')
+for route_type in route_types.groups:
+    routes_of_type = route_types.get_group(route_type)
+    matches = routes_of_type['passes'].sum()
+    total = len(routes_of_type)
+    no_matches = total - matches
+    print(f"{route_type}:")
+    print(f"  - With POI matches: {matches}")
+    print(f"  - Without POI matches: {no_matches}")
+    print(f"  - Total routes: {total}")
 
 # Visualization with enhanced Folium mapping
 m = folium.Map(location=(site_lat, site_lon), zoom_start=12)
@@ -457,6 +555,9 @@ folium.Marker(
 
 # Add routes to the map
 for index, row in results_df.iterrows():
+    if index >= len(routes):  # Skip if no route was generated (error cases)
+        continue
+        
     route_geometry = routes[index]
     
     if route_geometry:  # Only process non-None routes
@@ -476,21 +577,21 @@ for poi in pois:
     folium.CircleMarker(
         location=poi['coordinates'],
         radius=5,
-        popup=f"POI ID: {poi['id']}<br>Name: {poi['name']}<br>Coordinates: {poi['coordinates']}",
+        popup=f"POI ID: {poi['id']}<br>Name: {poi['name']}<br>Coordinates: {poi['coordinates']}<br>Threshold: {poi['threshold']} km",
         color='orange',
         fill=True,
         fillColor='orange',
         fillOpacity=0.7
     ).add_to(m)
 
-    # Add proximity circle for POIs
+    # Add proximity circle for POIs with individual thresholds
     folium.Circle(
-        location=poi['coordinates'],  # Use the coordinates tuple directly
-        radius=0.1 * 1000,  # 0.1 km radius
+        location=poi['coordinates'],
+        radius=poi['threshold'] * 1000,  # Convert km to meters
         color='orange',
         fill=True,
         fillOpacity=0.2,
-        popup="POI Proximity (0.1 km)"
+        popup=f"POI Threshold: {poi['threshold']} km"
     ).add_to(m)
 
 # Add markers for origins and destinations that passed through POIs
@@ -518,11 +619,5 @@ for index, row in results_df[results_df['passes']].iterrows():
 folium.LayerControl().add_to(m)
 
 # Save the map with additional features
-m.save("PM_route_map.html")
-print("Enhanced map saved as enhanced_route_map.html")
-
-# Optional: Print summary of routes and POI matches
-print("\nRoute Summary:")
-print(results_df.groupby('route_type')['passes'].sum())
-print("\nTotal Routes with POI Matches:", results_df['passes'].sum())
-
+m.save("Route_map.html")
+print("Map saved.")
