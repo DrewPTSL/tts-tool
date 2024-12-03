@@ -10,6 +10,9 @@ from openpyxl import Workbook
 # Step 1: Read the TTS Text File and extract GTA06 origins
 with open(r"TTSAM.txt", "r") as file:
     content = file.read()
+
+# Re-open file to get lines
+with open(r"TTSAM.txt", "r") as file:
     lines = file.readlines()
 
 # Extract table from text file
