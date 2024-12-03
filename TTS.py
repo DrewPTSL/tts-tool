@@ -6,6 +6,7 @@ from geopy.distance import geodesic
 import re
 from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
 from openpyxl import Workbook
+from openpyxl.utils import get_column_letter
 
 # Step 1: Read the TTS Text File and extract GTA06 origins
 with open(r"TTSAM.txt", "r") as file:
@@ -370,7 +371,7 @@ site_summary_df = pd.DataFrame([{
     'Longitude': site_lon
 }, {
     'Site Zone': 'Additional Info',
-    'Latitude': 'Placeholder for any extra site information',
+    'Latitude': 'Placeholder',
     'Longitude': ''
 }])
 
@@ -404,11 +405,42 @@ with pd.ExcelWriter('Output.xlsx', engine='openpyxl') as writer:
         row_idx += 1  # Increment row index
 
     export_df.to_excel(writer, sheet_name='Route Results', index=False)
-   
+    
+    # Autofit columns in Route Results sheet
+    route_results_sheet = writer.sheets['Route Results']
+    for column in export_df.columns:
+        column_width = max(
+            export_df[column].astype(str).apply(len).max(),
+            len(column)
+        )
+        col_idx = export_df.columns.get_loc(column)
+        route_results_sheet.column_dimensions[get_column_letter(col_idx + 1)].width = column_width + 2
+
     # Write the Location Details sheet
     poi_summary_df.to_excel(writer, sheet_name='Location Details', startrow=0, startcol=0, index=False)
     site_summary_df.to_excel(writer, sheet_name='Location Details', startrow=0, startcol=poi_summary_df.shape[1] + 2, index=False)
     
+    # Autofit columns in Location Details sheet for POI summary section
+    location_details_sheet = writer.sheets['Location Details']
+    for column in poi_summary_df.columns:
+        column_width = max(
+            poi_summary_df[column].astype(str).apply(len).max(),
+            len(column)
+        )
+        col_idx = poi_summary_df.columns.get_loc(column)
+        location_details_sheet.column_dimensions[get_column_letter(col_idx + 1)].width = column_width + 2
+    
+    # Autofit columns in Location Details sheet for site summary section
+    for column in site_summary_df.columns:
+        column_width = max(
+            site_summary_df[column].astype(str).apply(len).max(),
+            len(column)
+        )
+        col_idx = site_summary_df.columns.get_loc(column)
+        # Add offset for the gap between POI summary and site summary
+        col_letter = get_column_letter(col_idx + poi_summary_df.shape[1] + 3)
+        location_details_sheet.column_dimensions[col_letter].width = column_width + 2
+
     # Get the workbook and create a new sheet for calculations
     workbook = writer.book
     calc_sheet = workbook.create_sheet(title='POI Traffic Analysis') 
