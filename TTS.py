@@ -377,70 +377,74 @@ site_summary_df = pd.DataFrame([{
 
 # Create an Excel writer
 with pd.ExcelWriter('Output.xlsx', engine='openpyxl') as writer:
-    # Write the main results sheet
-    workbook = writer.book
-    wb = Workbook()
-    raw_text_sheet = workbook.create_sheet(title='Raw Text')
+    # Define styles for consistent use across sheets
+    header_font = Font(name='Arial', size=11, bold=True, color='FFFFFF')
+    header_fill = PatternFill(start_color='005295', end_color='005295', fill_type='solid')
+    cell_font = Font(name='Arial', size=11)
+    alignment_center = Alignment(horizontal='center')
+    border_style = Border(
+        left=Side(border_style='thin'),
+        right=Side(border_style='thin'),
+        top=Side(border_style='thin'),
+        bottom=Side(border_style='thin')
+    )
 
-    row_idx = 1  # Start at row 1
-    split_mode = False  # Flag to identify when to split rows
-
-    for line in lines:
-        stripped_line = line.strip()
-        
-        # Check for the header row to activate split mode
-        if stripped_line.startswith("gta06_orig"):
-            split_mode = True
-
-        # Handle splitting for tabular data or headers
-        if split_mode and stripped_line:
-            # Split line into columns
-            parts = stripped_line.split()
-            for col_idx, value in enumerate(parts, start=1):
-                raw_text_sheet.cell(row=row_idx, column=col_idx, value=value)
-        else:
-            # Write the line as-is in column A
-            raw_text_sheet.cell(row=row_idx, column=1, value=stripped_line)
-        
-        row_idx += 1  # Increment row index
-
+    # Write and format Route Results sheet
     export_df.to_excel(writer, sheet_name='Route Results', index=False)
-    
-    # Autofit columns in Route Results sheet
     route_results_sheet = writer.sheets['Route Results']
-    for column in export_df.columns:
+    
+    # Format headers in Route Results
+    for col_idx, column in enumerate(export_df.columns, start=1):
+        cell = route_results_sheet.cell(row=1, column=col_idx)
+        cell.font = header_font
+        cell.fill = header_fill
+        cell.alignment = alignment_center
+        cell.border = border_style
+        
+        # Autofit column width
         column_width = max(
             export_df[column].astype(str).apply(len).max(),
             len(column)
         )
-        col_idx = export_df.columns.get_loc(column)
-        route_results_sheet.column_dimensions[get_column_letter(col_idx + 1)].width = column_width + 2
-
-    # Write the Location Details sheet
+        route_results_sheet.column_dimensions[get_column_letter(col_idx)].width = column_width + 2
+   
+    # Write and format Location Details sheet
     poi_summary_df.to_excel(writer, sheet_name='Location Details', startrow=0, startcol=0, index=False)
     site_summary_df.to_excel(writer, sheet_name='Location Details', startrow=0, startcol=poi_summary_df.shape[1] + 2, index=False)
     
-    # Autofit columns in Location Details sheet for POI summary section
     location_details_sheet = writer.sheets['Location Details']
-    for column in poi_summary_df.columns:
+    
+    # Format headers in Location Details - POI summary section
+    for col_idx, column in enumerate(poi_summary_df.columns, start=1):
+        cell = location_details_sheet.cell(row=1, column=col_idx)
+        cell.font = header_font
+        cell.fill = header_fill
+        cell.alignment = alignment_center
+        cell.border = border_style
+        
+        # Autofit column width
         column_width = max(
             poi_summary_df[column].astype(str).apply(len).max(),
             len(column)
         )
-        col_idx = poi_summary_df.columns.get_loc(column)
-        location_details_sheet.column_dimensions[get_column_letter(col_idx + 1)].width = column_width + 2
+        location_details_sheet.column_dimensions[get_column_letter(col_idx)].width = column_width + 2
     
-    # Autofit columns in Location Details sheet for site summary section
-    for column in site_summary_df.columns:
+    # Format headers in Location Details - site summary section
+    for col_idx, column in enumerate(site_summary_df.columns, start=1):
+        col_letter = get_column_letter(col_idx + poi_summary_df.shape[1] + 2)
+        cell = location_details_sheet.cell(row=1, column=col_idx + poi_summary_df.shape[1] + 2)
+        cell.font = header_font
+        cell.fill = header_fill
+        cell.alignment = alignment_center
+        cell.border = border_style
+        
+        # Autofit column width
         column_width = max(
             site_summary_df[column].astype(str).apply(len).max(),
             len(column)
         )
-        col_idx = site_summary_df.columns.get_loc(column)
-        # Add offset for the gap between POI summary and site summary
-        col_letter = get_column_letter(col_idx + poi_summary_df.shape[1] + 3)
         location_details_sheet.column_dimensions[col_letter].width = column_width + 2
-
+    
     # Get the workbook and create a new sheet for calculations
     workbook = writer.book
     calc_sheet = workbook.create_sheet(title='POI Traffic Analysis') 
@@ -475,7 +479,6 @@ with pd.ExcelWriter('Output.xlsx', engine='openpyxl') as writer:
     calc_sheet[f'D{total_row}'] = f'=SUM(D3:D{total_row - 1})'
     calc_sheet[f'E{total_row}'] = f'=SUM(E3:E{total_row - 1})'
     calc_sheet[f'F{total_row}'] = f'=SUM(F3:F{total_row - 1})'
-
 
     # Add formulas for percentage of total in columns D and F
     for idx, poi in enumerate(pois, start=3):
@@ -551,6 +554,31 @@ with pd.ExcelWriter('Output.xlsx', engine='openpyxl') as writer:
 
     # Adjust the column width (adding a little extra for padding)
     calc_sheet.column_dimensions[column_letter].width = max_length + 2
+
+    # Create Raw Text sheet
+    raw_text_sheet = workbook.create_sheet(title='Raw Text')
+
+    row_idx = 1  # Start at row 1
+    split_mode = False  # Flag to identify when to split rows
+
+    for line in lines:
+        stripped_line = line.strip()
+        
+        # Check for the header row to activate split mode
+        if stripped_line.startswith("gta06_orig"):
+            split_mode = True
+
+        # Handle splitting for tabular data or headers
+        if split_mode and stripped_line:
+            # Split line into columns
+            parts = stripped_line.split()
+            for col_idx, value in enumerate(parts, start=1):
+                raw_text_sheet.cell(row=row_idx, column=col_idx, value=value)
+        else:
+            # Write the line as-is in column A
+            raw_text_sheet.cell(row=row_idx, column=1, value=stripped_line)
+        
+        row_idx += 1  # Increment row index
 
 print("\nRoute Summary:")
 print(results_df.groupby('route_type')['passes'].sum())
