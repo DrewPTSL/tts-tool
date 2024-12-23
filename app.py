@@ -8,10 +8,18 @@ from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
 from openpyxl import Workbook
 from openpyxl.utils import get_column_letter
 import requests
-from streamlit_folium import folium_static
+from streamlit_folium import st_folium
 import io
 import plotly.express as px
 import matplotlib.pyplot as plt
+import geopandas as gpd
+from shapely.geometry import Point
+
+zones_df = pd.read_csv('Zones.csv')
+
+gdf = gpd.read_file("Polygons.geojson")
+if gdf.crs.to_epsg() != 4326:
+    gdf = gdf.to_crs(epsg=4326)
 
 # Set page config
 st.set_page_config(
@@ -33,21 +41,11 @@ if 'processing_started' not in st.session_state:
 if 'results_df' not in st.session_state:
     st.session_state.results_df = None
 
-def reset_app():
-    st.session_state.pois = []
-    st.session_state.poi_count = 0
-    st.session_state.processing_started = False
-    st.session_state.results_df = None
-    st.experimental_rerun()
-
 # Title and description
 st.title("TTS Route Analysis Tool")
 
 # Add reset button in the top right
 col1, col2 = st.columns([6, 1])
-with col2:
-    if st.button("Reset App"):
-        reset_app()
 
 with col1:
     st.markdown("Upload your TTS file and analyze routes through points of interest.")
@@ -60,10 +58,9 @@ st.markdown("### Site Configuration")
 col1, col2 = st.columns(2)
 
 with col1:
-    site_zone = st.number_input(
+    site_zone = st.selectbox(
         "Site Zone",
-        min_value=1,
-        value=5241,
+        zones_df['GTA06'],
         help="Enter the site zone number"
     )
 
@@ -81,51 +78,165 @@ except ValueError:
     st.error("Invalid coordinates format. Please use: latitude, longitude")
     valid_coords = False
 
+## Site Zone Matching
+
+if site_lon:
+    point = Point(site_lon, site_lat)
+    matching_polygon = gdf[gdf.contains(point)]
+
+    if not matching_polygon.empty:
+        # Safely access the first matching polygon's 'gta06' column
+        suggested_gta06_zone = matching_polygon.iloc[0]['gta06']
+        st.write(f"Recommended zone based on coordinates: {suggested_gta06_zone}")
+    else:
+        st.write("No matching polygon found for the given coordinates.")
+
+
 # POI Management Section
 st.markdown("### Points of Interest")
-st.markdown("Add or remove points of interest for route analysis.")
 
-# Add new POI
-col1, col2, col3, col4 = st.columns([2, 2, 1, 1])
-with col1:
-    new_poi_name = st.text_input("POI Name", key="new_poi_name")
-with col2:
-    new_poi_coords = st.text_input("POI Coordinates (Lat, Lon)", key="new_poi_coords")
-with col3:
-    new_poi_threshold = st.number_input("Threshold (m)", min_value=1, value=50, key="new_poi_threshold")
-with col4:
-    if st.button("Add POI"):
+# Add button to create new row
+if st.button("Add New Row"):
+    if 'num_rows' not in st.session_state:
+        st.session_state.num_rows = 1
+    else:
+        st.session_state.num_rows += 1
+
+if 'num_rows' not in st.session_state:
+    st.session_state.num_rows = 1
+
+# Display POI input rows
+for i in range(st.session_state.num_rows):
+   col1, col2, col3, col4 = st.columns([2, 2, 1, 0.5])
+   with col1:
+       name = st.text_input("POI Name", key=f"name_{i}", help="Enter name (e.g. North via Greenhouse Road)")
+   with col2:
+       coords = st.text_input("Coordinates (Lat, Lon)", key=f"coords_{i}",help="Enter coordinates in format: latitude, longitude")
+   with col3:
+       threshold = st.slider("Threshold (m)", min_value=1, max_value=500, value=50, key=f"threshold_{i}",help = "Select the threshold redius around the POI")
+   with col4:
+       st.write("")
+       st.write("")
+       if st.button("🗑️", key=f"delete_{i}", help = "Delete POI"):
+           st.session_state.num_rows -= 1
+           st.rerun()
+
+# Process filled rows into POIs list before analysis
+st.session_state.pois = []
+for i in range(st.session_state.num_rows):
+    name = st.session_state.get(f"name_{i}")
+    coords = st.session_state.get(f"coords_{i}")
+    threshold = st.session_state.get(f"threshold_{i}")
+    
+    if name and coords:
         try:
-            lat, lon = map(float, new_poi_coords.replace(" ", "").split(","))
-            new_poi = {
-                'id': f'POI_{st.session_state.poi_count + 1}',
-                'name': new_poi_name,
+            lat, lon = map(float, coords.replace(" ", "").split(","))
+            st.session_state.pois.append({
+                'id': f'POI_{i + 1}',
+                'name': name,
                 'coordinates': (lat, lon),
-                'threshold': new_poi_threshold / 1000  # Convert meters to kilometers
-            }
-            st.session_state.pois.append(new_poi)
-            st.session_state.poi_count += 1
-            st.success(f"Added POI: {new_poi_name}")
+                'threshold': threshold / 1000
+            })
         except ValueError:
-            st.error("Invalid coordinates format")
-        except Exception as e:
-            st.error(f"Error adding POI: {str(e)}")
+            st.error(f"Invalid coordinates format in row {i + 1}")
 
-# Display and manage existing POIs
-if st.session_state.pois:
-    st.markdown("#### Current POIs")
-    for idx, poi in enumerate(st.session_state.pois):
-        col1, col2, col3, col4 = st.columns([2, 2, 1, 1])
-        with col1:
-            st.text(poi['name'])
-        with col2:
-            st.text(f"({poi['coordinates'][0]}, {poi['coordinates'][1]})")
-        with col3:
-            st.text(f"{int(poi['threshold'] * 1000)}m")
-        with col4:
-            if st.button("Delete", key=f"delete_{idx}"):
-                st.session_state.pois.pop(idx)
-                st.experimental_rerun()
+# After the site coordinates input section, add the map visualization
+if valid_coords:
+    try:          
+        m = folium.Map(location=[site_lat, site_lon], zoom_start=12, width='100%')
+
+        # Add site zone marker
+        sitezone_layer = folium.FeatureGroup(name="Site Zone Marker", show=True)
+        folium.Marker(
+            location=(site_lat, site_lon),
+            popup=f"Site Zone {site_zone}",
+            icon=folium.Icon(color='black', icon='home')
+        ).add_to(sitezone_layer)
+
+        # Add POIs with tooltips
+        poi_layer = folium.FeatureGroup(name="POI Marker", show=True)
+        poithreshold_layer = folium.FeatureGroup(name="POI Threshold Buffer", show=True)
+        for poi in st.session_state.pois:
+            folium.CircleMarker(
+                location=poi['coordinates'],
+                radius=5,
+                popup=f"POI ID: {poi['id']}<br>Name: {poi['name']}<br>Threshold: {poi['threshold']} km",
+                color='orange',
+                fill=True,
+                fillColor='orange',
+                fillOpacity=0.7
+            ).add_to(poi_layer)
+
+            # Add proximity circle for POIs with individual thresholds
+            folium.Circle(
+                location=poi['coordinates'],
+                radius=poi['threshold'] * 1000,  # Convert km to meters
+                color='orange',
+                fill=True,
+                fillOpacity=0.2,
+                popup=f"{poi['name']}<br>Threshold: {poi['threshold']} km",
+            ).add_to(poithreshold_layer)
+
+        def highlight_style_function(feature):
+            return {
+                'fillColor': 'yellow',
+                'color': 'red',
+                'weight': 3,
+                'fillOpacity': 0.7
+            }
+
+        # Style function for regular polygons
+        def style_function(feature):
+            return {
+                'fillColor': 'white',
+                'color': 'black',
+                'weight': 2,
+                'fillOpacity': 0.5
+            }
+
+        # Highlighted polygon layer
+        if site_zone == suggested_gta06_zone:
+            selectedzone_layer = folium.FeatureGroup(name="Selected Zone", show=True)
+            for _, row in matching_polygon.iterrows():
+                folium.GeoJson(
+                    row.geometry,
+                    style_function=style_function,
+                    tooltip=f"gta06: {row['gta06']}, Region: {row['region']}"
+                ).add_to(selectedzone_layer)
+        else:
+            suggestedzone_layer = folium.FeatureGroup(name="Suggested Zone", show=True)
+            for _, row in matching_polygon.iterrows():
+                folium.GeoJson(
+                    row.geometry,
+                    style_function=style_function,
+                    tooltip=f"gta06: {row['gta06']}, Region: {row['region']}"
+                ).add_to(suggestedzone_layer)
+            
+            selectedzone_layer = folium.FeatureGroup(name="Selected Zone", show=True)
+            for _, row in gdf.iterrows():
+                if row['gta06'] == site_zone:  # Check if the gta06 matches the site_zone
+                    folium.GeoJson(
+                        row.geometry,
+                        style_function=highlight_style_function,
+                        tooltip=f"gta06: {row['gta06']}, Region: {row['region']}"
+                    ).add_to(selectedzone_layer)
+            suggestedzone_layer.add_to(m)
+
+        # Add layer control
+        selectedzone_layer.add_to(m)
+        sitezone_layer.add_to(m)
+        poi_layer.add_to(m)
+        poithreshold_layer.add_to(m)
+        folium.LayerControl(collapsed=False).add_to(m)
+        
+        # Display map in Streamlit
+        st.subheader("Site and POI Map")
+        with st.container():
+            st_folium(m, height=600, use_container_width=True)
+        
+    except Exception as e:
+        st.error(f"Error creating map: {str(e)}")
+
 
 # Main Processing Section
 try:
@@ -423,3 +534,4 @@ try:
             st.error("Site zone does not exist in zones.csv")
 except Exception as e:
     st.error(f"An error occurred: {str(e)}")
+
