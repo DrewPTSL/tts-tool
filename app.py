@@ -143,96 +143,112 @@ for i in range(st.session_state.num_rows):
 # After the site coordinates input section, add the map visualization
 if valid_coords:
     try:          
-        m = folium.Map(location=[site_lat, site_lon], zoom_start=12, width='100%')
+        # Add a toggle button above the map
+        show_map = st.toggle('Show Map', value=True)
+        
 
-        # Add site zone marker
-        sitezone_layer = folium.FeatureGroup(name="Site Zone Marker", show=True)
-        folium.Marker(
-            location=(site_lat, site_lon),
-            popup=f"Site Zone {site_zone}",
-            icon=folium.Icon(color='black', icon='home')
-        ).add_to(sitezone_layer)
+        # Only display the map if toggle is on
+        if show_map:
+            # Your existing map code here
+            m = folium.Map(location=[site_lat, site_lon], zoom_start=12, width='100%')
 
-        # Add POIs with tooltips
-        poi_layer = folium.FeatureGroup(name="POI Marker", show=True)
-        poithreshold_layer = folium.FeatureGroup(name="POI Threshold Buffer", show=True)
-        for poi in st.session_state.pois:
-            folium.CircleMarker(
-                location=poi['coordinates'],
-                radius=5,
-                popup=f"POI ID: {poi['id']}<br>Name: {poi['name']}<br>Threshold: {poi['threshold']} km",
-                color='orange',
-                fill=True,
-                fillColor='orange',
-                fillOpacity=0.7
-            ).add_to(poi_layer)
-
-            # Add proximity circle for POIs with individual thresholds
-            folium.Circle(
-                location=poi['coordinates'],
-                radius=poi['threshold'] * 1000,  # Convert km to meters
-                color='orange',
-                fill=True,
-                fillOpacity=0.2,
-                popup=f"{poi['name']}<br>Threshold: {poi['threshold']} km",
-            ).add_to(poithreshold_layer)
-
-        def highlight_style_function(feature):
-            return {
-                'fillColor': 'yellow',
-                'color': 'red',
-                'weight': 3,
-                'fillOpacity': 0.7
-            }
-
-        # Style function for regular polygons
-        def style_function(feature):
-            return {
-                'fillColor': 'white',
-                'color': 'black',
-                'weight': 2,
-                'fillOpacity': 0.5
-            }
-
-        # Highlighted polygon layer
-        if site_zone == suggested_gta06_zone:
-            selectedzone_layer = folium.FeatureGroup(name="Selected Zone", show=True)
-            for _, row in matching_polygon.iterrows():
-                folium.GeoJson(
-                    row.geometry,
-                    style_function=style_function,
-                    tooltip=f"gta06: {row['gta06']}, Region: {row['region']}"
-                ).add_to(selectedzone_layer)
-        else:
-            suggestedzone_layer = folium.FeatureGroup(name="Suggested Zone", show=True)
-            for _, row in matching_polygon.iterrows():
-                folium.GeoJson(
-                    row.geometry,
-                    style_function=style_function,
-                    tooltip=f"gta06: {row['gta06']}, Region: {row['region']}"
-                ).add_to(suggestedzone_layer)
+            # Add a download button
+            if st.button("Download Map"):
+                # Save map to HTML
+                m.save("map.html")
+                st.success("Map downloaded successfully!")
             
-            selectedzone_layer = folium.FeatureGroup(name="Selected Zone", show=True)
-            for _, row in gdf.iterrows():
-                if row['gta06'] == site_zone:  # Check if the gta06 matches the site_zone
+
+            # Add site zone marker
+            sitezone_layer = folium.FeatureGroup(name="Site Zone Marker", show=True)
+            folium.Marker(
+                location=(site_lat, site_lon),
+                popup=f"Site Zone {site_zone}",
+                icon=folium.Icon(color='black', icon='home')
+            ).add_to(sitezone_layer)
+
+            # Add POIs with tooltips
+            poi_layer = folium.FeatureGroup(name="POI Marker", show=True)
+            poithreshold_layer = folium.FeatureGroup(name="POI Threshold Buffer", show=True)
+            for poi in st.session_state.pois:
+                folium.CircleMarker(
+                    location=poi['coordinates'],
+                    radius=5,
+                    popup=f"POI ID: {poi['id']}<br>Name: {poi['name']}<br>Threshold: {poi['threshold']} km",
+                    color='orange',
+                    fill=True,
+                    fillColor='orange',
+                    fillOpacity=0.7
+                ).add_to(poi_layer)
+
+                # Add proximity circle for POIs with individual thresholds
+                folium.Circle(
+                    location=poi['coordinates'],
+                    radius=poi['threshold'] * 1000,  # Convert km to meters
+                    color='orange',
+                    fill=True,
+                    fillOpacity=0.2,
+                    popup=f"{poi['name']}<br>Threshold: {poi['threshold']} km",
+                ).add_to(poithreshold_layer)
+
+            def highlight_style_function(feature):
+                return {
+                    'fillColor': 'yellow',
+                    'color': 'red',
+                    'weight': 3,
+                    'fillOpacity': 0.7
+                }
+
+            # Style function for regular polygons
+            def style_function(feature):
+                return {
+                    'fillColor': 'white',
+                    'color': 'black',
+                    'weight': 2,
+                    'fillOpacity': 0.5
+                }
+
+            # Highlighted polygon layer
+            if site_zone == suggested_gta06_zone:
+                selectedzone_layer = folium.FeatureGroup(name="Selected Zone", show=True)
+                for _, row in matching_polygon.iterrows():
                     folium.GeoJson(
                         row.geometry,
-                        style_function=highlight_style_function,
+                        style_function=style_function,
                         tooltip=f"gta06: {row['gta06']}, Region: {row['region']}"
                     ).add_to(selectedzone_layer)
-            suggestedzone_layer.add_to(m)
+            else:
+                suggestedzone_layer = folium.FeatureGroup(name="Suggested Zone", show=True)
+                for _, row in matching_polygon.iterrows():
+                    folium.GeoJson(
+                        row.geometry,
+                        style_function=style_function,
+                        tooltip=f"gta06: {row['gta06']}, Region: {row['region']}"
+                    ).add_to(suggestedzone_layer)
+                
+                selectedzone_layer = folium.FeatureGroup(name="Selected Zone", show=True)
+                for _, row in gdf.iterrows():
+                    if row['gta06'] == site_zone:  # Check if the gta06 matches the site_zone
+                        folium.GeoJson(
+                            row.geometry,
+                            style_function=highlight_style_function,
+                            tooltip=f"gta06: {row['gta06']}, Region: {row['region']}"
+                        ).add_to(selectedzone_layer)
+                suggestedzone_layer.add_to(m)
 
-        # Add layer control
-        selectedzone_layer.add_to(m)
-        sitezone_layer.add_to(m)
-        poi_layer.add_to(m)
-        poithreshold_layer.add_to(m)
-        folium.LayerControl(collapsed=False).add_to(m)
         
-        # Display map in Streamlit
-        st.subheader("Site and POI Map")
-        with st.container():
-            st_folium(m, height=600, use_container_width=True)
+
+            # Add layer control
+            selectedzone_layer.add_to(m)
+            sitezone_layer.add_to(m)
+            poi_layer.add_to(m)
+            poithreshold_layer.add_to(m)
+            folium.LayerControl(collapsed=False).add_to(m)
+            
+            # Display map in Streamlit
+            st.subheader("Site and POI Map")
+            with st.container():
+                st_folium(m, height=600, use_container_width=True)
         
     except Exception as e:
         st.error(f"Error creating map: {str(e)}")
@@ -508,16 +524,194 @@ try:
                         st.dataframe(display_df)
                         
                         # Generate Excel file for download
-                        excel_buffer = io.BytesIO()
-                        with pd.ExcelWriter(excel_buffer, engine='openpyxl') as writer:
-                            display_df.to_excel(writer, sheet_name='Results', index=False)
+                        def generate_formatted_excel():
+                            output = io.BytesIO()
+                            with pd.ExcelWriter(output, engine='openpyxl') as writer:
+                                # Format Route Results sheet
+                                export_df = display_df[['origin_id', 'dest_id', 'route_type', 'POI', 'total']].copy()
+                                export_df.to_excel(writer, sheet_name='Route Results', index=False)
+
+                                # Create POI Summary DataFrame
+                                poi_summary_df = pd.DataFrame([{
+                                    'POI Name': poi['name'],
+                                    'POI_ID': poi['id'],
+                                    'Latitude': poi['coordinates'][0],
+                                    'Longitude': poi['coordinates'][1],
+                                    'Threshold (km)': poi['threshold']
+                                } for poi in st.session_state.pois])
+
+                                # Create Site Summary DataFrame
+                                site_summary_df = pd.DataFrame([{
+                                    'Site Zone': site_zone,
+                                    'Latitude': site_lat,
+                                    'Longitude': site_lon
+                                }])
+
+                                # Write sheets and apply formatting
+                                poi_summary_df.to_excel(writer, sheet_name='Location Details', startrow=0, startcol=0, index=False)
+                                site_summary_df.to_excel(writer, sheet_name='Location Details', startrow=0, startcol=poi_summary_df.shape[1] + 2, index=False)
+
+                                
+                                # Apply Excel formatting
+                                workbook = writer.book
+                                for sheet_name in ['Route Results', 'Location Details']:
+                                    sheet = writer.sheets[sheet_name]
+                                    if sheet_name == 'Location Details':
+                                        apply_header_formatting(sheet, exclude_columns=[6,7])
+                                    else:
+                                        apply_header_formatting(sheet)
+                                    autofit_columns(sheet)
+
+                                # Create and format POI Traffic Analysis sheet
+                                calc_sheet = create_poi_analysis_sheet(workbook, st.session_state.pois)
+                                format_poi_analysis_sheet(calc_sheet, len(st.session_state.pois))
+
+                                # Create Raw Text sheet if content available
+                                create_raw_text_sheet(workbook, content)
+
+                            return output.getvalue()
+
+                        def apply_header_formatting(sheet, exclude_columns=None):
+                            header_font = Font(name='Arial', size=11, bold=True, color='FFFFFF')
+                            header_fill = PatternFill(start_color='005295', end_color='005295', fill_type='solid')
+                            border = Border(left=Side(style='thin'), right=Side(style='thin'), 
+                                        top=Side(style='thin'), bottom=Side(style='thin'))
+                            if exclude_columns is None:
+                                exclude_columns = []
+                            for cell in sheet[1]:
+                                if cell.column not in exclude_columns:
+                                    cell.font = header_font
+                                    cell.fill = header_fill
+                                    cell.border = border
+                                    cell.alignment = Alignment(horizontal='center')
+
+                        def autofit_columns(sheet):
+                            for column in sheet.columns:
+                                max_length = 0
+                                column = [cell for cell in column]
+                                for cell in column:
+                                    try:
+                                        max_length = max(max_length, len(str(cell.value)))
+                                    except:
+                                        pass
+                                adjusted_width = max_length + 2
+                                sheet.column_dimensions[get_column_letter(column[0].column)].width = adjusted_width
+
+                        def create_poi_analysis_sheet(workbook, pois):
+                            calc_sheet = workbook.create_sheet(title='POI Traffic Analysis')
+                            total_row = len(pois) + 3
+                            
+                            calc_sheet['B2'] = 'From/To'
+                            calc_sheet.merge_cells('C2:D2')
+                            calc_sheet['C2'] = 'In'
+                            calc_sheet.merge_cells('E2:F2')
+                            calc_sheet['E2'] = 'Out'
+                            
+                            for idx, poi in enumerate(pois, start=3):
+                                calc_sheet[f'B{idx}'] = poi['name']
+                                calc_sheet[f'C{idx}'] = f'=SUMIFS(\'Route Results\'!E:E,\'Route Results\'!C:C,"origin_to_site",\'Route Results\'!D:D,"{poi["name"]}")'
+                                calc_sheet[f'E{idx}'] = f'=SUMIFS(\'Route Results\'!E:E,\'Route Results\'!C:C,"site_to_destination",\'Route Results\'!D:D,"{poi["name"]}")'
+                                calc_sheet[f'D{idx}'] = f'=IF(C{idx}>0,C{idx}/C{total_row},0)'
+                                calc_sheet[f'F{idx}'] = f'=IF(E{idx}>0,E{idx}/E{total_row},0)'
+
+                            calc_sheet[f'B{total_row}'] = "Total"
+                            calc_sheet[f'C{total_row}'] = f'=SUM(C3:C{total_row-1})'
+                            calc_sheet[f'D{total_row}'] = f'=SUM(D3:D{total_row-1})'
+                            calc_sheet[f'E{total_row}'] = f'=SUM(E3:E{total_row-1})'
+                            calc_sheet[f'F{total_row}'] = f'=SUM(F3:F{total_row-1})'
+                            
+                            return calc_sheet
+
+                        def format_poi_analysis_sheet(sheet, num_pois):
+                            total_row = num_pois + 3
+                            
+                            # Styles
+                            header_font = Font(name='Arial', size=11, bold=True, color='FFFFFF')
+                            header_fill = PatternFill(start_color='005295', end_color='005295', fill_type='solid')
+                            cell_font = Font(name='Arial', size=11)
+                            total_fill = PatternFill(start_color='F2F2F2', end_color='F2F2F2', fill_type='solid')
+                            border_style = Border(left=Side(style='thin'), right=Side(style='thin'), 
+                                        top=Side(style='thin'), bottom=Side(style='thin'))
+
+                            # Format headers
+                            for col in ['B', 'C', 'D', 'E', 'F']:
+                                cell = sheet[f'{col}2']
+                                cell.font = header_font
+                                cell.fill = header_fill
+                                cell.alignment = Alignment(horizontal='center')
+                                cell.border = border_style
+
+                            # Format POI rows
+                            for row in range(3, total_row):
+                                sheet[f'B{row}'].font = header_font
+                                sheet[f'B{row}'].fill = header_fill
+                                for col in ['C', 'D', 'E', 'F']:
+                                    cell = sheet[f'{col}{row}']
+                                    cell.font = cell_font
+                                    cell.alignment = Alignment(horizontal='right')
+                                    cell.border = border_style
+                                    if col in ['D', 'F']:
+                                        cell.number_format = '0.00%'
+
+                            # Format the "Total" row
+                            sheet[f'B{total_row}'].font = header_font
+                            sheet[f'B{total_row}'].fill = header_fill
+
+                            for col in ['C', 'D', 'E', 'F']:
+                                total_cell = sheet[f'{col}{total_row}']
+                                total_cell.font = Font(name='Arial', size=11, bold=True)
+                                total_cell.fill = total_fill
+                                total_cell.alignment = Alignment(horizontal='right')
+                                total_cell.border = border_style
+                                if col in ['D', 'F']:  # Ensure percentage format for Total row in columns D and F
+                                    total_cell.number_format = '0.00%'
+
+                            # Apply "all borders" to the entire table
+                            for row in range(2, total_row + 1):
+                                for col in ['B', 'C', 'D', 'E', 'F']:
+                                    cell = sheet[f'{col}{row}']
+                                    cell.border = border_style
+
+                            # Autofit the width of column B
+                            column_letter = 'B'
+                            max_length = 0
+
+                            # Iterate through all rows in column B to find the longest content
+                            for row in sheet.iter_rows(min_col=2, max_col=2, min_row=2, max_row=total_row):
+                                for cell in row:
+                                    if cell.value:  # Ensure the cell has a value
+                                        max_length = max(max_length, len(str(cell.value)))
+
+                            # Adjust the column width (adding a little extra for padding)
+                            sheet.column_dimensions[column_letter].width = max_length + 2
+
+                        def create_raw_text_sheet(workbook, content):
+                            raw_sheet = workbook.create_sheet(title='Raw Text')
+                            row_idx = 1
+                            split_mode = False
+                            raw_sheet.sheet_view.show_grid_lines = False
+                            
+                            for line in content.split('\n'):
+                                stripped_line = line.strip()
+                                if stripped_line.startswith("gta06_orig"):
+                                    split_mode = True
+                                    
+                                if split_mode and stripped_line:
+                                    parts = stripped_line.split()
+                                    for col_idx, value in enumerate(parts, start=1):
+                                        raw_sheet.cell(row=row_idx, column=col_idx, value=value)
+                                else:
+                                    raw_sheet.cell(row=row_idx, column=1, value=stripped_line)
+                                
+                                row_idx += 1
+                            
                         
+                        excel_data = generate_formatted_excel()
                         st.download_button(
                             label="Download Results as Excel",
-                            data=excel_buffer.getvalue(),
+                            data=excel_data,
                             file_name="tts_analysis_results.xlsx",
-                            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                        )
+                            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
                         
                 except Exception as e:
                     status_text.text(f"Error during processing: {str(e)}")
