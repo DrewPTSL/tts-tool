@@ -28,7 +28,7 @@ st.set_page_config(
     layout="wide"
 )
 
-# Initialize session states
+# Initialize session state
 if 'pois' not in st.session_state:
     st.session_state.pois = []
     
