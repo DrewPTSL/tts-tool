@@ -28,7 +28,7 @@ st.set_page_config(
     layout="wide"
 )
 
-# Initialize session state
+# Initialize session states
 if 'pois' not in st.session_state:
     st.session_state.pois = []
     
@@ -67,7 +67,7 @@ with col1:
 with col2:
     coords_input = st.text_input(
         "Site Coordinates (Latitude, Longitude)",
-        value="43.212342441568325, -79.77345451007199",
+        value="43.4109, -80.3142",
         help="Enter coordinates in format: latitude, longitude"
     )
 
@@ -144,12 +144,10 @@ for i in range(st.session_state.num_rows):
 if valid_coords:
     try:          
         # Add a toggle button above the map
-        show_map = st.toggle('Show Map', value=True)
-        
+        show_map = st.toggle('Show Map', value=False)
 
         # Only display the map if toggle is on
         if show_map:
-            # Your existing map code here
             m = folium.Map(location=[site_lat, site_lon], zoom_start=12, width='100%')
 
             # Add a download button
@@ -157,7 +155,6 @@ if valid_coords:
                 # Save map to HTML
                 m.save("map.html")
                 st.success("Map downloaded successfully!")
-            
 
             # Add site zone marker
             sitezone_layer = folium.FeatureGroup(name="Site Zone Marker", show=True)
@@ -189,7 +186,7 @@ if valid_coords:
                     fill=True,
                     fillOpacity=0.2,
                     popup=f"{poi['name']}<br>Threshold: {poi['threshold']} km",
-                ).add_to(poithreshold_layer)
+                ).add_to(poi_layer)
 
             def highlight_style_function(feature):
                 return {
@@ -236,23 +233,19 @@ if valid_coords:
                         ).add_to(selectedzone_layer)
                 suggestedzone_layer.add_to(m)
 
-        
-
             # Add layer control
             selectedzone_layer.add_to(m)
             sitezone_layer.add_to(m)
             poi_layer.add_to(m)
-            poithreshold_layer.add_to(m)
             folium.LayerControl(collapsed=False).add_to(m)
             
             # Display map in Streamlit
             st.subheader("Site and POI Map")
             with st.container():
-                st_folium(m, height=600, use_container_width=True)
+                st_folium(m, height=600, use_container_width=True,returned_objects=[])
         
     except Exception as e:
         st.error(f"Error creating map: {str(e)}")
-
 
 # Main Processing Section
 try:
@@ -712,11 +705,136 @@ try:
                             data=excel_data,
                             file_name="tts_analysis_results.xlsx",
                             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
-                        
+
+                        if st.session_state.results_df is not None and not st.session_state.results_df.empty:
+                             # Add a toggle button above the map
+                            show_route_map = st.toggle('Show Route Map', value=False)
+                            if show_route_map:
+                                
+                                route_map = folium.Map(location=[site_lat, site_lon], zoom_start=10)
+
+                                # Add a download button
+                                if st.button("Download Map"):
+                                    # Save map to HTML
+                                    route_map.save("route_map.html")
+                                    st.success("Map downloaded successfully!")
+                                
+                                # Create feature groups
+                                site_layer = folium.FeatureGroup(name="Site Location", show=True)
+                                origin_routes = folium.FeatureGroup(name="Origin to Site Routes", show=True)
+                                dest_routes = folium.FeatureGroup(name="Site to Destination Routes", show=True)
+                                poi_layer = folium.FeatureGroup(name="Points of Interest", show=True)
+                                
+                                # Add site marker
+                                folium.Marker(
+                                    location=[site_lat, site_lon],
+                                    popup=folium.Popup("Site Location",max_width=200),
+                                    icon=folium.Icon(color='black', icon='home')
+                                ).add_to(site_layer)
+                                
+                                # Add routes
+                                for _, row in st.session_state.results_df.iterrows():
+                                    if row['passes']:
+                                        origin_id = row['origin_id']
+                                        dest_id = row['dest_id']
+                                        route_type = row['route_type']
+                                        
+                                        if route_type == 'origin_to_site':
+                                            origin_row = zones_df[zones_df['GTA06'] == origin_id].iloc[0]
+                                            route = get_route(origin_row['Latitude'], origin_row['Longitude'], site_lat, site_lon)
+                                            if route:
+                                                coords = decode(route)
+                                                folium.PolyLine(coords, weight=2, color='blue', opacity=0.8,
+                                                    popup=folium.Popup(f"Origin Zone: {origin_id}<br> Traffic: {row['total']}",max_width=200)
+                                                ).add_to(origin_routes)
+                                                
+                                        elif route_type == 'site_to_destination':
+                                            dest_row = zones_df[zones_df['GTA06'] == dest_id].iloc[0]
+                                            route = get_route(site_lat, site_lon, dest_row['Latitude'], dest_row['Longitude'])
+                                            if route:
+                                                coords = decode(route)
+                                                folium.PolyLine(coords, weight=2, color='red', opacity=0.8,
+                                                    popup=folium.Popup(f"Destination Zone: {dest_id}<br> Traffic: {row['total']}",max_width=200)
+                                                ).add_to(dest_routes)
+                                
+                                # Add POI markers
+                                for poi in st.session_state.pois:
+                                    folium.CircleMarker(
+                                        location=poi['coordinates'],
+                                        radius=5,
+                                        popup=f"POI ID: {poi['id']}<br>Name: {poi['name']}<br>Threshold: {poi['threshold']} km",
+                                        color='orange',
+                                        fill=True,
+                                        fillColor='orange',
+                                        fillOpacity=0.7
+                                    ).add_to(poi_layer)
+
+                                    # Add proximity circle for POIs with individual thresholds
+                                    folium.Circle(
+                                        location=poi['coordinates'],
+                                        radius=poi['threshold'] * 1000,  # Convert km to meters
+                                        color='orange',
+                                        fill=True,
+                                        fillOpacity=0.2,
+                                        popup=f"{poi['name']}<br>Threshold: {poi['threshold']} km",
+                                    ).add_to(poi_layer)
+
+                                # Add zone nodes layer
+                                origin_nodes = folium.FeatureGroup(name="Origin Zone Locations", show=True)
+                                dest_nodes = folium.FeatureGroup(name="Destination Zone Locations", show=True)
+
+                                # Add zone markers with enhanced popups
+                                for _, row in st.session_state.results_df.iterrows():
+                                    if row['passes']:
+                                        # Get POI names and total trips
+                                        poi = row['intersected_pois'][0]['name']
+                                        total_trips = row['total']
+                                        
+                                        if row['route_type'] == 'origin_to_site':
+                                            zone_id = row['origin_id']
+                                            zone_row = zones_df[zones_df['GTA06'] == zone_id].iloc[0]
+                                            popup_text = (f"Origin Zone: {zone_id}<br>"
+                                                            f"POI: {poi}<br>"
+                                                            f"Total Trips: {total_trips}")
+                                            
+                                            folium.Marker(
+                                                location=[zone_row['Latitude'], zone_row['Longitude']],
+                                                popup=folium.Popup(popup_text, max_width=200),
+                                                icon=folium.Icon(color='cadetblue', icon ='car',prefix='fa')
+                                            ).add_to(origin_nodes)
+                                            
+                                        else:  # site_to_destination
+                                            zone_id = row['dest_id']
+                                            zone_row = zones_df[zones_df['GTA06'] == zone_id].iloc[0]
+                                            popup_text = (f"Destination Zone: {zone_id}<br>"
+                                                            f"POI: {poi}<br>"
+                                                            f"Total Trips: {total_trips}")
+                                            
+                                            folium.Marker(
+                                                location=[zone_row['Latitude'], zone_row['Longitude']],
+                                                popup=folium.Popup(popup_text, max_width=200),
+                                                icon=folium.Icon(color='darkred', icon ='car-side',prefix='fa')
+                                            ).add_to(dest_nodes)                     
+                                
+                                # Add all layers to map
+                                site_layer.add_to(route_map)
+                                origin_routes.add_to(route_map)
+                                dest_routes.add_to(route_map)
+                                poi_layer.add_to(route_map)
+                                origin_nodes.add_to(route_map)
+                                dest_nodes.add_to(route_map)
+                                
+                                # Add layer control
+                                folium.LayerControl(collapsed=False).add_to(route_map)
+                                
+                                st.subheader("Route Map")
+                                st_folium(route_map, height=600, width=None,returned_objects=[])
+
                 except Exception as e:
                     status_text.text(f"Error during processing: {str(e)}")
                     progress_bar.progress(0)
                     st.error(f"An error occurred: {str(e)}")
+
         elif len(st.session_state.pois) == 0:
             st.warning("Please add at least one Point of Interest before processing")
         else:
