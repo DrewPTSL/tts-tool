@@ -15,9 +15,9 @@ import matplotlib.pyplot as plt
 import geopandas as gpd
 from shapely.geometry import Point
 
-zones_df = pd.read_csv('Zones.csv')
+zones_df = pd.read_csv('2006Zones.csv')
 
-gdf = gpd.read_file("Polygons.geojson")
+gdf = gpd.read_file("2006Polygons.geojson")
 if gdf.crs.to_epsg() != 4326:
     gdf = gdf.to_crs(epsg=4326)
 
@@ -27,6 +27,7 @@ st.set_page_config(
     page_icon="🚗",
     layout="wide"
 )
+
 
 # Initialize session states
 if 'pois' not in st.session_state:
@@ -53,16 +54,37 @@ with col1:
 # File Upload Section
 uploaded_file = st.file_uploader("Upload your TTS file", type=['txt'])
 
+data_choice = st.radio(
+    "Select Data Year:",
+    options=["2006 Zones", "2022 Zones"])
+
+if data_choice == "2006 Zones":
+    zone_col = 'gta06'
+    region_col = 'region'
+    zones_df = pd.read_csv('2006Zones.csv')
+
+    gdf = gpd.read_file("2006Polygons.geojson")
+    if gdf.crs.to_epsg() != 4326:
+        gdf = gdf.to_crs(epsg=4326)
+else:
+    zone_col = 'TTS2022'
+    region_col = 'Reg_name'
+    zones_df = pd.read_csv('2022Zones.csv')
+
+    gdf = gpd.read_file("2022Polygons.geojson")
+    if gdf.crs.to_epsg() != 4326:
+        gdf = gdf.to_crs(epsg=4326)
+
+
 # Configuration Section
 st.markdown("### Site Configuration")
 col1, col2 = st.columns(2)
 
 with col1:
-    site_zone = st.selectbox(
-        "Site Zone",
-        zones_df['GTA06'],
-        help="Enter the site zone number"
-    )
+    if data_choice == "2006 Zones":
+        site_zone = st.selectbox("Site Zone", zones_df['GTA06'])
+    else:
+        site_zone = st.selectbox("Site Zone", zones_df['TTS2022'])
 
 with col2:
     coords_input = st.text_input(
@@ -85,11 +107,11 @@ if site_lon:
     matching_polygon = gdf[gdf.contains(point)]
 
     if not matching_polygon.empty:
-        # Safely access the first matching polygon's 'gta06' column
-        suggested_gta06_zone = matching_polygon.iloc[0]['gta06']
-        st.write(f"Recommended zone based on coordinates: {suggested_gta06_zone}")
-    else:
-        st.write("No matching polygon found for the given coordinates.")
+        if data_choice == "2006 Zones":
+            suggested_zone = matching_polygon.iloc[0]['gta06']
+        else:
+            suggested_zone = matching_polygon.iloc[0]['TTS2022'] 
+        st.write(f"Recommended zone based on coordinates: {suggested_zone}")
 
 
 # POI Management Section
@@ -206,13 +228,13 @@ if valid_coords:
                 }
 
             # Highlighted polygon layer
-            if site_zone == suggested_gta06_zone:
+            if site_zone == suggested_zone:
                 selectedzone_layer = folium.FeatureGroup(name="Selected Zone", show=True)
                 for _, row in matching_polygon.iterrows():
                     folium.GeoJson(
                         row.geometry,
                         style_function=style_function,
-                        tooltip=f"gta06: {row['gta06']}, Region: {row['region']}"
+                        tooltip=f"{zone_col}: {row[zone_col]}, Region: {row[region_col]}"
                     ).add_to(selectedzone_layer)
             else:
                 suggestedzone_layer = folium.FeatureGroup(name="Suggested Zone", show=True)
@@ -220,18 +242,19 @@ if valid_coords:
                     folium.GeoJson(
                         row.geometry,
                         style_function=style_function,
-                        tooltip=f"gta06: {row['gta06']}, Region: {row['region']}"
+                        tooltip=f"{zone_col}: {row[zone_col]}, Region: {row[region_col]}"
                     ).add_to(suggestedzone_layer)
                 
                 selectedzone_layer = folium.FeatureGroup(name="Selected Zone", show=True)
                 for _, row in gdf.iterrows():
-                    if row['gta06'] == site_zone:  # Check if the gta06 matches the site_zone
+                    if row[zone_col] == site_zone:  # Check if the zone_col [gta06, tts2022] matches the site_zone
                         folium.GeoJson(
                             row.geometry,
                             style_function=highlight_style_function,
-                            tooltip=f"gta06: {row['gta06']}, Region: {row['region']}"
+                            tooltip=f"{zone_col}: {row[zone_col]}, Region: {row[region_col]}"
                         ).add_to(selectedzone_layer)
                 suggestedzone_layer.add_to(m)
+            
 
             # Add layer control
             selectedzone_layer.add_to(m)
@@ -249,10 +272,16 @@ if valid_coords:
 
 # Main Processing Section
 try:
-    zones_df = pd.read_csv('Zones.csv')
+    if data_choice == "2006 Zones":
+        zone_col = 'GTA06'
+        zones_df = pd.read_csv('2006Zones.csv')
+        
+    else:
+        zone_col = 'TTS2022'
+        zones_df = pd.read_csv('2022Zones.csv')
     
     # Validate site zone exists in zones.csv
-    if not zones_df[zones_df['GTA06'] == site_zone].empty and valid_coords:
+    if not zones_df[zones_df[zone_col] == site_zone].empty and valid_coords:
         if uploaded_file is not None and len(st.session_state.pois) > 0:
             # Add start button
             start_button = st.button("Start Processing")
@@ -306,11 +335,12 @@ try:
                         # Extract table from text file
                         table_pattern = re.compile(r"^\s*(\d+)\s+(\d+)\s+(\d+)\s*$", re.MULTILINE)
                         matches = table_pattern.findall(content)
-                        df_origins = pd.DataFrame(matches, columns=["gta06_orig", "gta06_dest", "total"])
-                        df_origins = df_origins.astype({"gta06_orig": int, "gta06_dest": int, "total": int})
+                        zone_col = 'GTA06' if data_choice == "2006 Zones" else 'TTS2022'
+                        df_origins = pd.DataFrame(matches, columns=[f"{zone_col}_orig", f"{zone_col}_dest", "total"])
+                        df_origins = df_origins.astype({f"{zone_col}_orig": int, f"{zone_col}_dest": int, "total": int})
                         
                         # Get site zone coordinates
-                        site_zone_row = zones_df[zones_df['GTA06'] == site_zone]
+                        site_zone_row = zones_df[zones_df[zone_col] == site_zone]
                         site_zone_lat = site_zone_row['Latitude'].values[0]
                         site_zone_lon = site_zone_row['Longitude'].values[0]
                         
@@ -324,12 +354,12 @@ try:
                             if status_callback:
                                 status_callback(f"Processing route {idx + 1} of {total_rows}")
                                 
-                            origin_id = row['gta06_orig']
-                            dest_id = row['gta06_dest']
+                            origin_id = row[f'{zone_col}_orig']
+                            dest_id = row[f'{zone_col}_dest']
                             
                             # Check if zones exist
-                            origin_row = zones_df[zones_df['GTA06'] == origin_id]
-                            dest_row = zones_df[zones_df['GTA06'] == dest_id]
+                            origin_row = zones_df[zones_df[zone_col] == origin_id]
+                            dest_row = zones_df[zones_df[zone_col] == dest_id]
                             
                             if origin_row.empty or dest_row.empty:
                                 continue
@@ -535,7 +565,7 @@ try:
 
                                 # Create Site Summary DataFrame
                                 site_summary_df = pd.DataFrame([{
-                                    'Site Zone': site_zone,
+                                    f'Site {zone_col}': site_zone,
                                     'Latitude': site_lat,
                                     'Longitude': site_lon
                                 }])
@@ -686,7 +716,7 @@ try:
                             
                             for line in content.split('\n'):
                                 stripped_line = line.strip()
-                                if stripped_line.startswith("gta06_orig"):
+                                if stripped_line.startswith("gta06_orig") or stripped_line.startswith("tts22_orig"):
                                     split_mode = True
                                     
                                 if split_mode and stripped_line:
@@ -707,14 +737,14 @@ try:
                             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 
                         if st.session_state.results_df is not None and not st.session_state.results_df.empty:
-                             # Add a toggle button above the map
+                            # Add a toggle button above the map
                             show_route_map = st.toggle('Show Route Map', value=False)
                             if show_route_map:
                                 
                                 route_map = folium.Map(location=[site_lat, site_lon], zoom_start=10)
-
+                                
                                 # Add a download button
-                                if st.button("Download Map"):
+                                if st.button("Download Route Map"):
                                     # Save map to HTML
                                     route_map.save("route_map.html")
                                     st.success("Map downloaded successfully!")
@@ -740,7 +770,7 @@ try:
                                         route_type = row['route_type']
                                         
                                         if route_type == 'origin_to_site':
-                                            origin_row = zones_df[zones_df['GTA06'] == origin_id].iloc[0]
+                                            origin_row = zones_df[zones_df[zone_col] == origin_id].iloc[0]
                                             route = get_route(origin_row['Latitude'], origin_row['Longitude'], site_lat, site_lon)
                                             if route:
                                                 coords = decode(route)
@@ -749,7 +779,7 @@ try:
                                                 ).add_to(origin_routes)
                                                 
                                         elif route_type == 'site_to_destination':
-                                            dest_row = zones_df[zones_df['GTA06'] == dest_id].iloc[0]
+                                            dest_row = zones_df[zones_df[zone_col] == dest_id].iloc[0]
                                             route = get_route(site_lat, site_lon, dest_row['Latitude'], dest_row['Longitude'])
                                             if route:
                                                 coords = decode(route)
@@ -792,7 +822,7 @@ try:
                                         
                                         if row['route_type'] == 'origin_to_site':
                                             zone_id = row['origin_id']
-                                            zone_row = zones_df[zones_df['GTA06'] == zone_id].iloc[0]
+                                            zone_row = zones_df[zones_df[zone_col] == zone_id].iloc[0]
                                             popup_text = (f"Origin Zone: {zone_id}<br>"
                                                             f"POI: {poi}<br>"
                                                             f"Total Trips: {total_trips}")
@@ -805,7 +835,7 @@ try:
                                             
                                         else:  # site_to_destination
                                             zone_id = row['dest_id']
-                                            zone_row = zones_df[zones_df['GTA06'] == zone_id].iloc[0]
+                                            zone_row = zones_df[zones_df[zone_col] == zone_id].iloc[0]
                                             popup_text = (f"Destination Zone: {zone_id}<br>"
                                                             f"POI: {poi}<br>"
                                                             f"Total Trips: {total_trips}")
