@@ -9,3 +9,4 @@ streamlit-folium
 plotly
 matplotlib
 geojson
+geopandas
