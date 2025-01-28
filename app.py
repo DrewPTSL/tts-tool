@@ -137,7 +137,7 @@ for i in range(st.session_state.num_rows):
    with col1:
        name = st.text_input("POI Name", key=f"name_{i}", help="Enter name (e.g. North via Greenhouse Road)")
    with col2:
-       coords = st.text_input("Coordinates (Lat, Lon)", key=f"coords_{i}",help="Enter coordinates in format: latitude, longitude")
+       coords = st.text_input("Coordinates (latitude, longitude)", key=f"coords_{i}",help="Enter coordinates in format: latitude, longitude")
    with col3:
        threshold = st.slider("Threshold (m)", min_value=1, max_value=500, value=50, key=f"threshold_{i}",help = "Select the threshold redius around the POI")
    with col4:
