@@ -77,7 +77,7 @@ shapely
      - Upload your TTS trip table text file
 2. Select Data Year
      - Choose between 2006 and 2022 TTS zone systems
-3 Configure Site Location
+3. Configure Site Location
      - Enter site zone number
      - Input site coordinates (latitude, longitude)
 4. Add Points of Interest
