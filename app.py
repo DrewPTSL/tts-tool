@@ -1,4 +1,5 @@
 import streamlit as st
+import streamlit_ext as ste
 import pandas as pd
 import folium
 from polyline import decode
@@ -263,13 +264,12 @@ if valid_coords:
             html = m.get_root().render()
 
             # Add download button AFTER map is fully configured
-            if st.download_button(
+            ste.download_button(
                 label="Download Map",
                 data=html,
                 file_name="site_poi_map.html",
                 mime="text/html"
-            ):
-                st.success("Map downloaded successfully!")
+            )
 
             # Display map in Streamlit
             st.subheader("Site and POI Map")
@@ -751,12 +751,11 @@ try:
                             
                         
                         excel_data = generate_formatted_excel()
-                        if st.download_button(
+                        ste.download_button(
                             label="Download Results as Excel",
                             data=excel_data,
                             file_name="tts_analysis_results.xlsx",
-                            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"):
-                            st.success("Map downloaded successfully!")
+                            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 
                         if st.session_state.results_df is not None and not st.session_state.results_df.empty:
                             # Add a toggle button above the map
@@ -877,13 +876,12 @@ try:
                                 html = route_map.get_root().render()
 
                                 # Add download button AFTER map is fully configured
-                                if st.download_button(
+                                ste.download_button(
                                     label="Download Route Map",
                                     data=html,
                                     file_name="Route_map.html",
                                     mime="text/html"
-                                ):
-                                    st.success("Map downloaded successfully!")
+                                )
                                 
                                 st.subheader("Route Map")
                                 st_folium(route_map, height=600, width=None,returned_objects=[])
