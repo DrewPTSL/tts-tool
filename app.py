@@ -15,11 +15,31 @@ import matplotlib.pyplot as plt
 import geopandas as gpd
 from shapely.geometry import Point
 
-zones_df = pd.read_csv('2006Zones.csv')
+@st.cache_data(show_spinner="Loading data...")
+def load_zones_data(data_choice):
+    """Load zones data based on selected year"""
+    if data_choice == "2006 Zones":
+        zones_df = pd.read_csv('2006Zones.csv')
+        zone_col = 'gta06'
+        region_col = 'region'
+    else:
+        zones_df = pd.read_csv('2022Zones.csv')
+        zone_col = 'TTS2022'
+        region_col = 'Reg_name'
+    return zones_df, zone_col, region_col
 
-gdf = gpd.read_file("2006Polygons.geojson")
-if gdf.crs.to_epsg() != 4326:
-    gdf = gdf.to_crs(epsg=4326)
+@st.cache_data(show_spinner="Loading geographic data...")
+def load_geojson_data(data_choice):
+    """Load GeoJSON data based on selected year"""
+    if data_choice == "2006 Zones":
+        file_path = "2006Polygons.geojson"
+    else:
+        file_path = "2022Polygons.geojson"
+        
+    gdf = gpd.read_file(file_path)
+    if gdf.crs.to_epsg() != 4326:
+        gdf = gdf.to_crs(epsg=4326)
+    return gdf
 
 # Set page config
 st.set_page_config(
@@ -27,7 +47,6 @@ st.set_page_config(
     page_icon="🚗",
     layout="wide"
 )
-
 
 # Initialize session states
 if 'pois' not in st.session_state:
@@ -58,23 +77,8 @@ data_choice = st.radio(
     "Select Data Year:",
     options=["2006 Zones", "2022 Zones"])
 
-if data_choice == "2006 Zones":
-    zone_col = 'gta06'
-    region_col = 'region'
-    zones_df = pd.read_csv('2006Zones.csv')
-
-    gdf = gpd.read_file("2006Polygons.geojson")
-    if gdf.crs.to_epsg() != 4326:
-        gdf = gdf.to_crs(epsg=4326)
-else:
-    zone_col = 'TTS2022'
-    region_col = 'Reg_name'
-    zones_df = pd.read_csv('2022Zones.csv')
-
-    gdf = gpd.read_file("2022Polygons.geojson")
-    if gdf.crs.to_epsg() != 4326:
-        gdf = gdf.to_crs(epsg=4326)
-
+zones_df, zone_col, region_col = load_zones_data(data_choice)
+gdf = load_geojson_data(data_choice)
 
 # Configuration Section
 st.markdown("### Site Configuration")
@@ -172,12 +176,6 @@ if valid_coords:
         if show_map:
             m = folium.Map(location=[site_lat, site_lon], zoom_start=12, width='100%')
 
-            # Add a download button
-            if st.button("Download Map"):
-                # Save map to HTML
-                m.save("map.html")
-                st.success("Map downloaded successfully!")
-
             # Add site zone marker
             sitezone_layer = folium.FeatureGroup(name="Site Zone Marker", show=True)
             folium.Marker(
@@ -247,30 +245,41 @@ if valid_coords:
                 
                 selectedzone_layer = folium.FeatureGroup(name="Selected Zone", show=True)
                 for _, row in gdf.iterrows():
-                    if row[zone_col] == site_zone:  # Check if the zone_col [gta06, tts2022] matches the site_zone
+                    if row[zone_col] == site_zone:
                         folium.GeoJson(
                             row.geometry,
                             style_function=highlight_style_function,
                             tooltip=f"{zone_col}: {row[zone_col]}, Region: {row[region_col]}"
                         ).add_to(selectedzone_layer)
                 suggestedzone_layer.add_to(m)
-            
 
             # Add layer control
             selectedzone_layer.add_to(m)
             sitezone_layer.add_to(m)
             poi_layer.add_to(m)
             folium.LayerControl(collapsed=False).add_to(m)
-            
+
+            # Generate HTML for download AFTER adding all elements
+            html = m.get_root().render()
+
+            # Add download button AFTER map is fully configured
+            if st.download_button(
+                label="Download Map",
+                data=html,
+                file_name="site_poi_map.html",
+                mime="text/html"
+            ):
+                st.success("Map downloaded successfully!")
+
             # Display map in Streamlit
             st.subheader("Site and POI Map")
             with st.container():
-                st_folium(m, height=600, use_container_width=True,returned_objects=[])
+                st_folium(m, height=600, use_container_width=True, returned_objects=[])
         
     except Exception as e:
         st.error(f"Error creating map: {str(e)}")
 
-# Main Processing Section
+## Main Processing Section
 try:
     if data_choice == "2006 Zones":
         zone_col = 'GTA06'
@@ -362,6 +371,16 @@ try:
                             dest_row = zones_df[zones_df[zone_col] == dest_id]
                             
                             if origin_row.empty or dest_row.empty:
+                                # Add a record for invalid zone
+                                results.append({
+                                    'origin_id': origin_id,
+                                    'dest_id': dest_id,
+                                    'route_type': 'invalid_zone',
+                                    'passes': False,
+                                    'num_pois_intersected': 0,
+                                    'intersected_pois': [],
+                                    'total': row['total']
+                                })
                                 continue
                             
                             try:
@@ -459,8 +478,10 @@ try:
                         
                         # Process the dataframe to show POI names
                         display_df = st.session_state.results_df.copy()
-                        display_df['POI'] = display_df['intersected_pois'].apply(
-                            lambda x: ', '.join(sorted(set([poi['name'] for poi in x]))) if x else ''
+                        display_df['POI'] = display_df.apply(
+                        lambda x: 'Invalid zone - route not processed' if x['route_type'] == 'invalid_zone' 
+                        else (', '.join(sorted(set([poi['name'] for poi in x['intersected_pois']]))) if x['intersected_pois'] else ''),
+                        axis=1
                         )
                         
                         # Select columns to display
@@ -730,11 +751,12 @@ try:
                             
                         
                         excel_data = generate_formatted_excel()
-                        st.download_button(
+                        if st.download_button(
                             label="Download Results as Excel",
                             data=excel_data,
                             file_name="tts_analysis_results.xlsx",
-                            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+                            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"):
+                            st.success("Map downloaded successfully!")
 
                         if st.session_state.results_df is not None and not st.session_state.results_df.empty:
                             # Add a toggle button above the map
@@ -743,11 +765,6 @@ try:
                                 
                                 route_map = folium.Map(location=[site_lat, site_lon], zoom_start=10)
                                 
-                                # Add a download button
-                                if st.button("Download Route Map"):
-                                    # Save map to HTML
-                                    route_map.save("route_map.html")
-                                    st.success("Map downloaded successfully!")
                                 
                                 # Create feature groups
                                 site_layer = folium.FeatureGroup(name="Site Location", show=True)
@@ -856,6 +873,17 @@ try:
                                 
                                 # Add layer control
                                 folium.LayerControl(collapsed=False).add_to(route_map)
+
+                                html = route_map.get_root().render()
+
+                                # Add download button AFTER map is fully configured
+                                if st.download_button(
+                                    label="Download Route Map",
+                                    data=html,
+                                    file_name="Route_map.html",
+                                    mime="text/html"
+                                ):
+                                    st.success("Map downloaded successfully!")
                                 
                                 st.subheader("Route Map")
                                 st_folium(route_map, height=600, width=None,returned_objects=[])
