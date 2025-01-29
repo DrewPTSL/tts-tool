@@ -77,7 +77,7 @@ uploaded_file = st.file_uploader("Upload your TTS file", type=['txt'])
 
 data_choice = st.radio(
     "Select Data Year:",
-    options=["2006 Zones", "2022 Zones"])
+    options=["2006 Zones", "2022 Zones"],horizontal=True)
 
 zones_df, zone_col, region_col = load_zones_data(data_choice)
 gdf = load_geojson_data(data_choice)
