@@ -77,17 +77,25 @@ uploaded_file = st.file_uploader("Upload your TTS file", type=['txt'])
 
 data_choice = st.radio(
     "Select Data Year:",
-    options=["2006 Zones", "2022 Zones"],horizontal=True)
+    options=["2006 Zones", "2022 Zones"],
+    horizontal=True,
+    index=None)
 
-zones_df, zone_col, region_col = load_zones_data(data_choice)
-gdf = load_geojson_data(data_choice)
+if data_choice:
+    zones_df, zone_col, region_col = load_zones_data(data_choice)
+    gdf = load_geojson_data(data_choice)
+else:
+    st.warning("Please select a data year")
+
 
 # Configuration Section
 st.markdown("### Site Configuration")
 col1, col2 = st.columns(2)
 
 with col1:
-    if data_choice == "2006 Zones":
+    if not data_choice:
+        site_zone = st.selectbox("Site Zone", [], disabled=True)
+    elif data_choice == "2006 Zones":
         site_zone = st.selectbox("Site Zone", zones_df['GTA06'])
     else:
         site_zone = st.selectbox("Site Zone", zones_df['TTS2022'])
@@ -95,20 +103,25 @@ with col1:
 with col2:
     coords_input = st.text_input(
         "Site Coordinates (Latitude, Longitude)",
-        value="43.4109, -80.3142",
+        value="",
         help="Enter coordinates in format: latitude, longitude"
     )
 
-try:
-    site_lat, site_lon = map(float, coords_input.replace(" ", "").split(","))
-    valid_coords = True
-except ValueError:
-    st.error("Invalid coordinates format. Please use: latitude, longitude")
+if coords_input.strip():  # Only validate if coordinates are provided
+    try:
+        site_lat, site_lon = map(float, coords_input.replace(" ", "").split(","))
+        valid_coords = True
+    except ValueError:
+        st.error("Invalid coordinates format. Please use: latitude, longitude")
+        valid_coords = False
+else:
     valid_coords = False
+    site_lat = None
+    site_lon = None
 
 ## Site Zone Matching
 
-if site_lon:
+if site_lon and data_choice:  # Add data_choice check
     point = Point(site_lon, site_lat)
     matching_polygon = gdf[gdf.contains(point)]
 
@@ -903,7 +916,7 @@ try:
             st.warning("Please upload a TTS file to process")
     else:
         if not valid_coords:
-            st.error("Please enter valid coordinates")
+            st.warning("Please enter valid Site Coordinates")
         else:
             st.error("Site zone does not exist in zones.csv")
 except Exception as e:
