@@ -62,6 +62,10 @@ if 'processing_started' not in st.session_state:
 if 'results_df' not in st.session_state:
     st.session_state.results_df = None
 
+# Initialize rows if not in session_state
+if "rows" not in st.session_state:
+    st.session_state.rows = [{"name": "", "coords": "", "threshold": 50}]
+
 
 # Title and description
 st.title("TTS Route Analysis Tool")
@@ -136,31 +140,43 @@ if site_lon and data_choice:  # Add data_choice check
 # POI Management Section
 st.markdown("### Points of Interest")
 
-# Add button to create new row
+
+
+# Button to add a new row
 if st.button("Add New Row"):
-    if 'num_rows' not in st.session_state:
-        st.session_state.num_rows = 1
-    else:
-        st.session_state.num_rows += 1
+    st.session_state.rows.append({"name": "", "coords": "", "threshold": 50})
 
-if 'num_rows' not in st.session_state:
-    st.session_state.num_rows = 1
+# Display each row
+for i, row in enumerate(st.session_state.rows):
+    col1, col2, col3, col4 = st.columns([2, 2, 1, 0.5])
+    with col1:
+        row["name"] = st.text_input(
+            "POI Name",
+            key=f"name_{i}",
+            value=row["name"],
+            help="Enter name (e.g. North via Greenhill Road)"
+        )
+    with col2:
+        row["coords"] = st.text_input(
+            "Coordinates (Latitude, Longitude)",
+            key=f"coords_{i}",
+            value=row["coords"],
+            help="Enter coordinates in format: latitude, longitude"
+        )
+    with col3:
+        row["threshold"] = st.slider(
+            "Threshold (m)",
+            min_value=1,
+            max_value=500,
+            value=row["threshold"],
+            key=f"threshold_{i}",
+            help="Select the threshold radius around the POI"
+        )
+    with col4:
+        if st.button("🗑️", key=f"delete_{i}", help="Delete POI"):
+            st.session_state.rows.pop(i)
+            st.rerun()
 
-# Display POI input rows
-for i in range(st.session_state.num_rows):
-   col1, col2, col3, col4 = st.columns([2, 2, 1, 0.5])
-   with col1:
-       name = st.text_input("POI Name", key=f"name_{i}", help="Enter name (e.g. North via Greenhill Road)")
-   with col2:
-       coords = st.text_input("Coordinates (Latitude, Longitude)", key=f"coords_{i}",help="Enter coordinates in format: latitude, longitude")
-   with col3:
-       threshold = st.slider("Threshold (m)", min_value=1, max_value=500, value=50, key=f"threshold_{i}",help = "Select the threshold redius around the POI")
-   with col4:
-       st.write("")
-       st.write("")
-       if st.button("🗑️", key=f"delete_{i}", help = "Delete POI"):
-           st.session_state.num_rows -= 1
-           st.rerun()
 
 # Process filled rows into POIs list before analysis
 st.session_state.pois = []
@@ -631,22 +647,27 @@ try:
                                 # Create Site Summary DataFrame
                                 
                                 site_summary_df = pd.DataFrame([{
-                                    f'Site {zone_col}': zone,
-                                    'Latitude': zones_df[zones_df[zone_col] == zone]['Latitude'].values[0],
-                                    'Longitude': zones_df[zones_df[zone_col] == zone]['Longitude'].values[0]
+                                    f'Site {zone_col} Zone': zone,
+                                    'Zone Latitude': zones_df[zones_df[zone_col] == zone]['Latitude'].values[0],
+                                    'Zone Longitude': zones_df[zones_df[zone_col] == zone]['Longitude'].values[0]
                                 } for zone in site_zones])
+
+                                site_location_summary_df = pd.DataFrame([{
+                                    f'Site Latitude': site_lat,
+                                    'Site Longitude': site_lon
+                                }])
 
                                 # Write sheets and apply formatting
                                 poi_summary_df.to_excel(writer, sheet_name='Location Details', startrow=0, startcol=0, index=False)
                                 site_summary_df.to_excel(writer, sheet_name='Location Details', startrow=0, startcol=poi_summary_df.shape[1] + 2, index=False)
-
+                                site_location_summary_df.to_excel(writer, sheet_name='Location Details', startrow=0, startcol=poi_summary_df.shape[1] + 6, index=False)
                                 
                                 # Apply Excel formatting
                                 workbook = writer.book
                                 for sheet_name in ['Route Results', 'Location Details']:
                                     sheet = writer.sheets[sheet_name]
                                     if sheet_name == 'Location Details':
-                                        apply_header_formatting(sheet, exclude_columns=[6,7])
+                                        apply_header_formatting(sheet, exclude_columns=[6,7,11])
                                     else:
                                         apply_header_formatting(sheet)
                                     autofit_columns(sheet)
@@ -690,6 +711,8 @@ try:
                             calc_sheet = workbook.create_sheet(title='POI Traffic Analysis')
                             total_row = len(pois) + 3
                             
+                            # Non-rounded sums
+
                             calc_sheet['B2'] = 'From/To'
                             calc_sheet.merge_cells('C2:D2')
                             calc_sheet['C2'] = 'In'
@@ -708,6 +731,22 @@ try:
                             calc_sheet[f'D{total_row}'] = f'=SUM(D3:D{total_row-1})'
                             calc_sheet[f'E{total_row}'] = f'=SUM(E3:E{total_row-1})'
                             calc_sheet[f'F{total_row}'] = f'=SUM(F3:F{total_row-1})'
+
+                            # Rounded sums
+
+                            calc_sheet['H2'] = 'From/To'
+                            calc_sheet['I2'] = 'In'
+                            calc_sheet['J2'] = 'Out'
+
+                            for idx, poi in enumerate(pois, start=3):
+                                calc_sheet[f'H{idx}'] = poi['name']
+                                calc_sheet[f'I{idx}'] = f'=MROUND(D{idx},0.05)'
+                                calc_sheet[f'J{idx}'] = f'=MROUND(F{idx},0.05)'
+
+
+                            calc_sheet[f'H{total_row}'] = "Total"
+                            calc_sheet[f'I{total_row}'] = f'=SUM(I3:I{total_row-1})'
+                            calc_sheet[f'J{total_row}'] = f'=SUM(J3:J{total_row-1})'
                             
                             return calc_sheet
 
@@ -723,7 +762,7 @@ try:
                                         top=Side(style='thin'), bottom=Side(style='thin'))
 
                             # Format headers
-                            for col in ['B', 'C', 'D', 'E', 'F']:
+                            for col in ['B', 'C', 'D', 'E', 'F', 'H', 'I', 'J']:
                                 cell = sheet[f'{col}2']
                                 cell.font = header_font
                                 cell.fill = header_fill
@@ -734,35 +773,39 @@ try:
                             for row in range(3, total_row):
                                 sheet[f'B{row}'].font = header_font
                                 sheet[f'B{row}'].fill = header_fill
-                                for col in ['C', 'D', 'E', 'F']:
+                                sheet[f'H{row}'].font = header_font
+                                sheet[f'H{row}'].fill = header_fill
+                                for col in ['C', 'D', 'E', 'F', 'I', 'J']:
                                     cell = sheet[f'{col}{row}']
                                     cell.font = cell_font
                                     cell.alignment = Alignment(horizontal='right')
                                     cell.border = border_style
-                                    if col in ['D', 'F']:
+                                    if col in ['D', 'F', 'I','J']:
                                         cell.number_format = '0.00%'
 
                             # Format the "Total" row
                             sheet[f'B{total_row}'].font = header_font
                             sheet[f'B{total_row}'].fill = header_fill
+                            sheet[f'H{total_row}'].font = header_font
+                            sheet[f'H{total_row}'].fill = header_fill
 
-                            for col in ['C', 'D', 'E', 'F']:
+                            for col in ['C', 'D', 'E', 'F', 'I', 'J']:
                                 total_cell = sheet[f'{col}{total_row}']
                                 total_cell.font = Font(name='Arial', size=11, bold=True)
                                 total_cell.fill = total_fill
                                 total_cell.alignment = Alignment(horizontal='right')
                                 total_cell.border = border_style
-                                if col in ['D', 'F']:  # Ensure percentage format for Total row in columns D and F
+                                if col in ['D', 'F', 'I', 'J']:  # Ensure percentage format for Total row in columns D and F
                                     total_cell.number_format = '0.00%'
 
                             # Apply "all borders" to the entire table
                             for row in range(2, total_row + 1):
-                                for col in ['B', 'C', 'D', 'E', 'F']:
+                                for col in ['B', 'C', 'D', 'E', 'F', 'H', 'I', 'J']:
                                     cell = sheet[f'{col}{row}']
                                     cell.border = border_style
 
                             # Autofit the width of column B
-                            column_letter = 'B'
+                            column_letters = ['B','H']
                             max_length = 0
 
                             # Iterate through all rows in column B to find the longest content
@@ -772,7 +815,8 @@ try:
                                         max_length = max(max_length, len(str(cell.value)))
 
                             # Adjust the column width (adding a little extra for padding)
-                            sheet.column_dimensions[column_letter].width = max_length + 2
+                            for column_letter in column_letters:
+                                sheet.column_dimensions[column_letter].width = max_length + 2
 
                         def create_raw_text_sheet(workbook, content):
                             raw_sheet = workbook.create_sheet(title='Raw Text')
