@@ -94,11 +94,11 @@ col1, col2 = st.columns(2)
 
 with col1:
     if not data_choice:
-        site_zone = st.selectbox("Site Zone", [], disabled=True)
+        site_zones = st.multiselect("Site Zone", [], disabled=True)
     elif data_choice == "2006 Zones":
-        site_zone = st.selectbox("Site Zone", zones_df['GTA06'])
+        site_zones = st.multiselect("Site Zone", zones_df['GTA06'])
     else:
-        site_zone = st.selectbox("Site Zone", zones_df['TTS2022'])
+        site_zones = st.multiselect("Site Zone", zones_df['TTS2022'])
 
 with col2:
     coords_input = st.text_input(
@@ -195,7 +195,7 @@ if valid_coords:
             sitezone_layer = folium.FeatureGroup(name="Site Zone Marker", show=True)
             folium.Marker(
                 location=(site_lat, site_lon),
-                popup=f"Site Zone {site_zone}",
+                popup=f"Site Zone {site_zones}",
                 icon=folium.Icon(color='black', icon='home')
             ).add_to(sitezone_layer)
 
@@ -241,32 +241,26 @@ if valid_coords:
                 }
 
             # Highlighted polygon layer
-            if site_zone == suggested_zone:
-                selectedzone_layer = folium.FeatureGroup(name="Selected Zone", show=True)
-                for _, row in matching_polygon.iterrows():
-                    folium.GeoJson(
-                        row.geometry,
-                        style_function=style_function,
-                        tooltip=f"{zone_col}: {row[zone_col]}, Region: {row[region_col]}"
-                    ).add_to(selectedzone_layer)
-            else:
-                suggestedzone_layer = folium.FeatureGroup(name="Suggested Zone", show=True)
-                for _, row in matching_polygon.iterrows():
-                    folium.GeoJson(
-                        row.geometry,
-                        style_function=style_function,
-                        tooltip=f"{zone_col}: {row[zone_col]}, Region: {row[region_col]}"
-                    ).add_to(suggestedzone_layer)
-                
-                selectedzone_layer = folium.FeatureGroup(name="Selected Zone", show=True)
-                for _, row in gdf.iterrows():
-                    if row[zone_col] == site_zone:
+
+            selectedzone_layer = folium.FeatureGroup(name="Selected Zones", show=True)
+            for site_zone in site_zones:
+                if site_zone == suggested_zone:
+                    for _, row in matching_polygon.iterrows():
                         folium.GeoJson(
                             row.geometry,
-                            style_function=highlight_style_function,
+                            style_function=style_function,
                             tooltip=f"{zone_col}: {row[zone_col]}, Region: {row[region_col]}"
                         ).add_to(selectedzone_layer)
-                suggestedzone_layer.add_to(m)
+                else:
+                    for _, row in gdf.iterrows():
+                        if row[zone_col] == site_zone:
+                            folium.GeoJson(
+                                row.geometry,
+                                style_function=highlight_style_function,
+                                tooltip=f"{zone_col}: {row[zone_col]}, Region: {row[region_col]}"
+                            ).add_to(selectedzone_layer)
+                
+
 
             # Add layer control
             selectedzone_layer.add_to(m)
@@ -307,8 +301,8 @@ try:
     # zones_df, zone_col, region_col = load_zones_data(data_choice)
 
     
-    # Validate site zone exists in zones.csv
-    if not zones_df[zones_df[zone_col] == site_zone].empty and valid_coords:
+    # Validate site zones exist in zones.csv
+    if all(zone in zones_df[zone_col].values for zone in site_zones) and valid_coords:
         if uploaded_file is not None and len(st.session_state.pois) > 0:
             # Add start button
             start_button = st.button("Start Processing")
@@ -366,119 +360,151 @@ try:
                         df_origins = pd.DataFrame(matches, columns=[f"{zone_col}_orig", f"{zone_col}_dest", "total"])
                         df_origins = df_origins.astype({f"{zone_col}_orig": int, f"{zone_col}_dest": int, "total": int})
                         
-                        # Get site zone coordinates
-                        site_zone_row = zones_df[zones_df[zone_col] == site_zone]
-                        site_zone_lat = site_zone_row['Latitude'].values[0]
-                        site_zone_lon = site_zone_row['Longitude'].values[0]
-                        
                         results = []
-                        total_rows = len(df_origins)
+                        total_rows = 0
+                        for current_site_zone in site_zones:
+                            # Count rows where origin or destination is the site zone
+                            relevant_rows = len(df_origins[
+                                (df_origins[f"{zone_col}_orig"] == current_site_zone) | 
+                                (df_origins[f"{zone_col}_dest"] == current_site_zone)
+                            ])
+                            # Add extra count for routes between this site zone and other site zones
+                            other_site_zones = [zone for zone in site_zones if zone != current_site_zone]
+                            for other_zone in other_site_zones:
+                                between_zones = len(df_origins[
+                                    ((df_origins[f"{zone_col}_orig"] == current_site_zone) & 
+                                    (df_origins[f"{zone_col}_dest"] == other_zone)) |
+                                    ((df_origins[f"{zone_col}_orig"] == other_zone) & 
+                                    (df_origins[f"{zone_col}_dest"] == current_site_zone))
+                                ])
+                                total_rows += between_zones
+                            
+                            total_rows += relevant_rows
+                        processed_rows = 0
                         
-                        for idx, row in df_origins.iterrows():
-                            if progress_callback:
-                                progress = (idx + 1) / total_rows * 100  # Convert to percentage
-                                progress_callback(progress)
-                            if status_callback:
-                                status_callback(f"Processing route {idx + 1} of {total_rows}")
+                        for current_site_zone in site_zones:
+                            # Get site zone coordinates
+                            site_zone_row = zones_df[zones_df[zone_col] == current_site_zone]
+                            site_zone_lat = site_zone_row['Latitude'].values[0]
+                            site_zone_lon = site_zone_row['Longitude'].values[0]
+                            
+                            for idx, row in df_origins.iterrows():
+                                origin_id = row[f'{zone_col}_orig']
+                                dest_id = row[f'{zone_col}_dest']
                                 
-                            origin_id = row[f'{zone_col}_orig']
-                            dest_id = row[f'{zone_col}_dest']
-                            
-                            # Check if zones exist
-                            origin_row = zones_df[zones_df[zone_col] == origin_id]
-                            dest_row = zones_df[zones_df[zone_col] == dest_id]
-                            
-                            if origin_row.empty or dest_row.empty:
-                                # Add a record for invalid zone
-                                results.append({
-                                    'origin_id': origin_id,
-                                    'dest_id': dest_id,
-                                    'route_type': 'invalid_zone',
-                                    'passes': False,
-                                    'num_pois_intersected': 0,
-                                    'intersected_pois': [],
-                                    'total': row['total']
-                                })
-                                continue
-                            
-                            try:
-                                # Case 1: Both origin and destination are the site zone
-                                if origin_id == site_zone and dest_id == site_zone:
-                                    # Route from site zone to site (origin_to_site)
-                                    route1 = get_route(site_zone_lat, site_zone_lon, site_lat, site_lon)
+                                # Only process and count rows that involve the current site zone
+                                if origin_id != current_site_zone and dest_id != current_site_zone:
+                                    continue
                                     
-                                    # Route from site to site zone (site_to_destination)
-                                    route2 = get_route(site_lat, site_lon, site_zone_lat, site_zone_lon)
+                                if progress_callback:
+                                    processed_rows += 1
+                                    progress = (processed_rows / total_rows) * 100
+                                    progress_callback(progress)
+                                if status_callback:
+                                    status_callback(f"Processing route {processed_rows} of {total_rows}")
                                     
-                                    # Process origin_to_site route
-                                    if route1:
-                                        poi_check_result = passes_through(route1, st.session_state.pois)
-                                        results.append({
-                                            'origin_id': origin_id, 
-                                            'dest_id': dest_id,
-                                            'route_type': 'origin_to_site',
-                                            'passes': poi_check_result['passes'], 
-                                            'num_pois_intersected': poi_check_result['num_pois_intersected'],
-                                            'intersected_pois': poi_check_result['intersected_pois'],
-                                            'total': row['total']
-                                        })
-                                    
-                                    # Process site_to_destination route
-                                    if route2:
-                                        poi_check_result = passes_through(route2, st.session_state.pois)
-                                        results.append({
-                                            'origin_id': origin_id, 
-                                            'dest_id': dest_id,
-                                            'route_type': 'site_to_destination',
-                                            'passes': poi_check_result['passes'], 
-                                            'num_pois_intersected': poi_check_result['num_pois_intersected'],
-                                            'intersected_pois': poi_check_result['intersected_pois'],
-                                            'total': row['total']
-                                        })
+                                origin_id = row[f'{zone_col}_orig']
+                                dest_id = row[f'{zone_col}_dest']
+                                
+                                # Check if zones exist
+                                origin_row = zones_df[zones_df[zone_col] == origin_id]
+                                dest_row = zones_df[zones_df[zone_col] == dest_id]
+                                
+                                if origin_row.empty or dest_row.empty:
+                                    results.append({
+                                        'origin_id': origin_id,
+                                        'dest_id': dest_id,
+                                        'route_type': 'invalid_zone',
+                                        'passes': False,
+                                        'num_pois_intersected': 0,
+                                        'intersected_pois': [],
+                                        'total': row['total'],
+                                        'site_zone': current_site_zone
+                                    })
                                     continue
                                 
-                                # Case 2: Origin is not the site zone (route from origin to site)
-                                if origin_id != site_zone and dest_id == site_zone:
-                                    origin_lat = origin_row['Latitude'].values[0]
-                                    origin_lon = origin_row['Longitude'].values[0]
+                                try:
+                                    # Case 1: Both origin and destination are the site zone
+                                    if origin_id == current_site_zone and dest_id == current_site_zone:
+                                        # Route from site zone to site (origin_to_site)
+                                        route1 = get_route(site_zone_lat, site_zone_lon, site_lat, site_lon)
+                                        
+                                        # Route from site to site zone (site_to_destination)
+                                        route2 = get_route(site_lat, site_lon, site_zone_lat, site_zone_lon)
+                                        
+                                        # Process origin_to_site route
+                                        if route1:
+                                            poi_check_result = passes_through(route1, st.session_state.pois)
+                                            results.append({
+                                                'origin_id': origin_id, 
+                                                'dest_id': dest_id,
+                                                'route_type': 'origin_to_site',
+                                                'passes': poi_check_result['passes'], 
+                                                'num_pois_intersected': poi_check_result['num_pois_intersected'],
+                                                'intersected_pois': poi_check_result['intersected_pois'],
+                                                'total': row['total'],
+                                                'site_zone': current_site_zone
+                                            })
+                                        
+                                        # Process site_to_destination route
+                                        if route2:
+                                            poi_check_result = passes_through(route2, st.session_state.pois)
+                                            results.append({
+                                                'origin_id': origin_id, 
+                                                'dest_id': dest_id,
+                                                'route_type': 'site_to_destination',
+                                                'passes': poi_check_result['passes'], 
+                                                'num_pois_intersected': poi_check_result['num_pois_intersected'],
+                                                'intersected_pois': poi_check_result['intersected_pois'],
+                                                'total': row['total'],
+                                                'site_zone': current_site_zone
+                                            })
+                                        continue
                                     
-                                    route = get_route(origin_lat, origin_lon, site_lat, site_lon)
+                                    # Case 2: Origin is not the site zone (route from origin to site)
+                                    if origin_id != current_site_zone and dest_id == current_site_zone:
+                                        origin_lat = origin_row['Latitude'].values[0]
+                                        origin_lon = origin_row['Longitude'].values[0]
+                                        
+                                        route = get_route(origin_lat, origin_lon, site_lat, site_lon)
+                                        
+                                        if route:
+                                            poi_check_result = passes_through(route, st.session_state.pois)
+                                            results.append({
+                                                'origin_id': origin_id, 
+                                                'dest_id': dest_id,
+                                                'route_type': 'origin_to_site',
+                                                'passes': poi_check_result['passes'], 
+                                                'num_pois_intersected': poi_check_result['num_pois_intersected'],
+                                                'intersected_pois': poi_check_result['intersected_pois'],
+                                                'total': row['total'],
+                                                'site_zone': current_site_zone
+                                            })
                                     
-                                    if route:
-                                        poi_check_result = passes_through(route, st.session_state.pois)
-                                        results.append({
-                                            'origin_id': origin_id, 
-                                            'dest_id': dest_id,
-                                            'route_type': 'origin_to_site',
-                                            'passes': poi_check_result['passes'], 
-                                            'num_pois_intersected': poi_check_result['num_pois_intersected'],
-                                            'intersected_pois': poi_check_result['intersected_pois'],
-                                            'total': row['total']
-                                        })
-                                
-                                # Case 3: Origin is the site zone (route from site to destination)
-                                if origin_id == site_zone and dest_id != site_zone:
-                                    dest_lat = dest_row['Latitude'].values[0]
-                                    dest_lon = dest_row['Longitude'].values[0]
+                                    # Case 3: Origin is the site zone (route from site to destination)
+                                    if origin_id == current_site_zone and dest_id != current_site_zone:
+                                        dest_lat = dest_row['Latitude'].values[0]
+                                        dest_lon = dest_row['Longitude'].values[0]
+                                        
+                                        route = get_route(site_lat, site_lon, dest_lat, dest_lon)
+                                        
+                                        if route:
+                                            poi_check_result = passes_through(route, st.session_state.pois)
+                                            results.append({
+                                                'origin_id': origin_id, 
+                                                'dest_id': dest_id,
+                                                'route_type': 'site_to_destination',
+                                                'passes': poi_check_result['passes'], 
+                                                'num_pois_intersected': poi_check_result['num_pois_intersected'],
+                                                'intersected_pois': poi_check_result['intersected_pois'],
+                                                'total': row['total'],
+                                                'site_zone': current_site_zone
+                                            })
                                     
-                                    route = get_route(site_lat, site_lon, dest_lat, dest_lon)
-                                    
-                                    if route:
-                                        poi_check_result = passes_through(route, st.session_state.pois)
-                                        results.append({
-                                            'origin_id': origin_id, 
-                                            'dest_id': dest_id,
-                                            'route_type': 'site_to_destination',
-                                            'passes': poi_check_result['passes'], 
-                                            'num_pois_intersected': poi_check_result['num_pois_intersected'],
-                                            'intersected_pois': poi_check_result['intersected_pois'],
-                                            'total': row['total']
-                                        })
-                                
-                            except Exception as e:
-                                st.error(f"Error processing route {origin_id} to {dest_id}: {str(e)}")
-                                continue
-                        
+                                except Exception as e:
+                                    st.error(f"Error processing route {origin_id} to {dest_id}: {str(e)}")
+                                    continue
+                            
                         return pd.DataFrame(results)
 
                     def update_progress(progress):
@@ -603,11 +629,12 @@ try:
                                 } for poi in st.session_state.pois])
 
                                 # Create Site Summary DataFrame
+                                
                                 site_summary_df = pd.DataFrame([{
-                                    f'Site {zone_col}': site_zone,
-                                    'Latitude': site_lat,
-                                    'Longitude': site_lon
-                                }])
+                                    f'Site {zone_col}': zone,
+                                    'Latitude': zones_df[zones_df[zone_col] == zone]['Latitude'].values[0],
+                                    'Longitude': zones_df[zones_df[zone_col] == zone]['Longitude'].values[0]
+                                } for zone in site_zones])
 
                                 # Write sheets and apply formatting
                                 poi_summary_df.to_excel(writer, sheet_name='Location Details', startrow=0, startcol=0, index=False)
@@ -777,7 +804,7 @@ try:
 
                         if st.session_state.results_df is not None and not st.session_state.results_df.empty:
                             # Add a toggle button above the map
-                            show_route_map = st.toggle('Show Route Map', value=False)
+                            show_route_map = st.toggle('Show Route Map', value=True)
                             if show_route_map:
                                 with st.spinner("Generating map..."):
                                     
@@ -921,4 +948,3 @@ try:
             st.error("Site zone does not exist in zones.csv")
 except Exception as e:
     st.error(f"An error occurred: {str(e)}")
-
