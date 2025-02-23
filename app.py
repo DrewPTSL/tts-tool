@@ -146,6 +146,8 @@ st.markdown("### Points of Interest")
 if st.button("Add New Row"):
     st.session_state.rows.append({"name": "", "coords": "", "threshold": 50})
 
+num_rows = 1
+
 # Display each row
 for i, row in enumerate(st.session_state.rows):
     col1, col2, col3, col4 = st.columns([2, 2, 1, 0.5])
