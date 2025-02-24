@@ -7,6 +7,8 @@ from streamlit_folium import st_folium
 
 st.set_page_config(page_title="Route Visualizer", page_icon="🗺️",layout="wide")
 
+st.sidebar.title("🛣️ Route Visualizer")
+
 @st.cache_data(show_spinner="Loading zone data...")
 def load_zones_data(data_choice):
     if data_choice == "2006 Zones":
