@@ -15,6 +15,7 @@ import plotly.express as px
 import matplotlib.pyplot as plt
 import geopandas as gpd
 from shapely.geometry import Point
+from folium.plugins import Search
 
 @st.cache_data(show_spinner="Loading zone data...")
 def load_zones_data(data_choice):
@@ -180,10 +181,10 @@ for i, row in enumerate(st.session_state.rows):
 
 # Process filled rows into POIs list before analysis
 st.session_state.pois = []
-for i in range(st.session_state.num_rows):
-    name = st.session_state.get(f"name_{i}")
-    coords = st.session_state.get(f"coords_{i}")
-    threshold = st.session_state.get(f"threshold_{i}")
+for i, row in enumerate(st.session_state.rows):
+    name = row["name"]
+    coords = row["coords"]
+    threshold = row["threshold"]
     
     if name and coords:
         try:
@@ -950,7 +951,9 @@ try:
                                                     location=[zone_row['Latitude'], zone_row['Longitude']],
                                                     popup=folium.Popup(popup_text, max_width=200),
                                                     icon=folium.Icon(color='darkred', icon ='car-side',prefix='fa')
-                                                ).add_to(dest_nodes)                     
+                                                ).add_to(dest_nodes)    
+
+                                                 
                                     
                                     # Add all layers to map
                                     site_layer.add_to(route_map)
@@ -959,6 +962,15 @@ try:
                                     poi_layer.add_to(route_map)
                                     origin_nodes.add_to(route_map)
                                     dest_nodes.add_to(route_map)
+
+                                    # origin_search = Search(
+                                    #     layer=origin_nodes,
+                                    #     geom_type="Point",
+                                    #     placeholder="Search for an origin zone",
+                                    #     collapsed=False,
+                                    #     search_label="zone_id",
+                                    #     weight=3,
+                                    # ).add_to(route_map)    
                                     
                                     # Add layer control
                                     folium.LayerControl(collapsed=False).add_to(route_map)
