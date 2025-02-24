@@ -17,6 +17,8 @@ import geopandas as gpd
 from shapely.geometry import Point
 from folium.plugins import Search
 
+st.sidebar.title("Route Visualizer 🛣️")
+
 @st.cache_data(show_spinner="Loading zone data...")
 def load_zones_data(data_choice):
     """Load zones data based on selected year"""
@@ -49,6 +51,8 @@ st.set_page_config(
     page_icon="🚗",
     layout="wide"
 )
+
+st.sidebar.title("🚗 TTS Route Analysis Tool")
 
 # Initialize session states
 if 'pois' not in st.session_state:
