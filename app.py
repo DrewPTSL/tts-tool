@@ -16,14 +16,6 @@ import matplotlib.pyplot as plt
 import geopandas as gpd
 from shapely.geometry import Point
 from folium.plugins import Search
-from st_pages import Page, show_pages
-
-show_pages(
-    [
-        Page("app.py","TTS Route Analysis Tool","🚗" ),  # Custom name & icon
-        Page("pages/RouteVisualizery", "Route Visualizer", "🛣️"),
-    ]
-)
 
 @st.cache_data(show_spinner="Loading zone data...")
 def load_zones_data(data_choice):
