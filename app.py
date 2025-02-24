@@ -17,8 +17,6 @@ import geopandas as gpd
 from shapely.geometry import Point
 from folium.plugins import Search
 
-st.sidebar.title("Route Visualizer 🛣️")
-
 @st.cache_data(show_spinner="Loading zone data...")
 def load_zones_data(data_choice):
     """Load zones data based on selected year"""
