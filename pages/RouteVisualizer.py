@@ -5,7 +5,7 @@ import requests
 import pandas as pd
 from streamlit_folium import st_folium
 
-st.set_page_config(page_title="Route Visualizer", page_icon="🗺️")
+st.set_page_config(page_title="Route Visualizer", page_icon="🗺️",layout="wide")
 
 @st.cache_data(show_spinner="Loading zone data...")
 def load_zones_data(data_choice):
@@ -99,8 +99,7 @@ def create_map(start_coords, end_coords, route_data):
     return m
 
 def main():
-    st.set_page_config(page_title="Route Visualizer", layout="wide")
-    
+   
     st.title("Route Visualizer")
     
     col1, col2= st.columns(2)
