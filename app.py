@@ -47,7 +47,8 @@ def load_geojson_data(data_choice):
 st.set_page_config(
     page_title="TTS Route Analysis Tool",
     page_icon="🚗",
-    layout="wide"
+    layout="wide",
+    initial_sidebar_state="collapsed"
 )
 
 st.sidebar.title("🚗 TTS Route Analysis Tool")
