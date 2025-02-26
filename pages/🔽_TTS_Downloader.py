@@ -260,7 +260,7 @@ def run_webscraper(site_zones, time_periods, data_choice, custom_time=None, head
 
 ## Streamlit UI
 
-st.set_page_config(page_title="TTS Downloader", page_icon="🔽", layout="wide", initial_sidebar_state="collapsed")
+st.set_page_config(page_title="TTS Downloader", page_icon="🔽", layout="wide", initial_sidebar_state="auto")
 st.sidebar.title("🔽 TTS Downloader")
 st.title("TTS Downloader")
 
