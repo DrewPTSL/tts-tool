@@ -5,7 +5,7 @@ import requests
 import pandas as pd
 from streamlit_folium import st_folium
 
-st.set_page_config(page_title="Route Visualizer", page_icon="🗺️",layout="wide",initial_sidebar_state="collapsed")
+st.set_page_config(page_title="Route Visualizer", page_icon="🗺️",layout="wide",initial_sidebar_state="auto")
 
 st.sidebar.title("🛣️ Route Visualizer")
 
