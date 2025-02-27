@@ -288,10 +288,20 @@ if data_choice:
 
     with col2:
         coords_input = st.text_input(
-            "Site Coordinates (Latitude, Longitude) (Optional)",
+            "Site Coordinates (Latitude, Longitude) (Optional for looking up site zone)",
             value="",
             help="Enter coordinates in format: latitude, longitude"
         )
+    if coords_input and data_choice:  # Add data_choice check
+        point = Point(coords_input)
+        matching_polygon = gdf[gdf.contains(point)]
+
+        if not matching_polygon.empty:
+            if data_choice == "2006 Zones":
+                suggested_zone = matching_polygon.iloc[0]['gta06']
+            else:
+                suggested_zone = matching_polygon.iloc[0]['TTS2022'] 
+            st.write(f"Recommended zone based on coordinates: {suggested_zone}")
 
     # Time period selection
     col1, col2 = st.columns(2)
