@@ -49,22 +49,6 @@ A Streamlit-based web application for analyzing Transportation Tomorrow Survey (
 * Map downloads in HTML format
 * Formatted tables with proper styling
 
-## Requirements
-```
-streamlit
-pandas
-folium
-polyline
-geopy
-openpyxl
-requests
-streamlit_folium
-plotly
-matplotlib
-geopandas
-shapely
-```
-
 ## Required Data Files
 
 - `2006Zones.csv`: Contains 2006 TTS zone system information
