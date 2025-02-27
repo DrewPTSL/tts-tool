@@ -293,7 +293,8 @@ if data_choice:
             help="Enter coordinates in format: latitude, longitude"
         )
     if coords_input and data_choice:  # Add data_choice check
-        point = coords_input
+        site_lat, site_lon = map(float, coords_input.replace(" ", "").split(","))
+        point = Point(site_lon,site_lat)
         matching_polygon = gdf[gdf.contains(point)]
 
         if not matching_polygon.empty:
