@@ -11,6 +11,3 @@ plotly
 matplotlib
 geojson
 geopandas
-selenium
-webdriver-manager
-selenium
