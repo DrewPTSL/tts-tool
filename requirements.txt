@@ -1,4 +1,4 @@
-streamlit==1.44.0
+streamlit
 streamlit_ext
 pandas
 folium
