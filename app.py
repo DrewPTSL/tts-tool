@@ -730,21 +730,18 @@ try:
                                 poi_summary_df = pd.DataFrame([{
                                     'POI_ID': poi['id'],
                                     'POI Name': poi['name'],
-                                    'Latitude': poi['coordinates'][0],
-                                    'Longitude': poi['coordinates'][1],
+                                    'Coordinates': f"{poi['coordinates'][0]}, {poi['coordinates'][1]}",
                                     'Threshold (km)': poi['threshold']
                                 } for poi in st.session_state.pois])
 
                                 # Create Site Summary DataFrame
                                 site_summary_df = pd.DataFrame([{
                                     f'Site {zone_col} Zone': zone,
-                                    'Zone Latitude': zones_df[zones_df[zone_col] == zone]['Latitude'].values[0],
-                                    'Zone Longitude': zones_df[zones_df[zone_col] == zone]['Longitude'].values[0]
+                                    'Zone Coordinates': f"{zones_df[zones_df[zone_col] == zone]['Latitude'].values[0]}, {zones_df[zones_df[zone_col] == zone]['Longitude'].values[0]}"
                                 } for zone in site_zones])
 
                                 site_location_summary_df = pd.DataFrame([{
-                                    'Site Latitude': site_lat,
-                                    'Site Longitude': site_lon
+                                    'Site Coordinates': f"{site_lat}, {site_lon}"
                                 }])
 
                                 # Write sheets
@@ -757,7 +754,7 @@ try:
                                 for sheet_name in ['Route Results', 'Location Details']:
                                     sheet = writer.sheets[sheet_name]
                                     if sheet_name == 'Location Details':
-                                        apply_header_formatting(sheet, exclude_columns=[6, 7, 11])
+                                        apply_header_formatting(sheet, exclude_columns=[5,6,9,11])
                                     else:
                                         apply_header_formatting(sheet)
                                     autofit_columns(sheet)
@@ -946,7 +943,6 @@ try:
                                 st.session_state.get('route_map_results_id') != id(st.session_state.results_df):
                                     
                                     with st.spinner("Generating map..."):
-                                        from folium.plugins import MarkerCluster
 
                                         # Build a colour map for POIs — one distinct colour per POI
                                         POI_COLOURS = ['blue', 'red', 'green', 'purple', 'orange', 'darkred', 
@@ -992,8 +988,8 @@ try:
                                         }
 
                                         # Use MarkerCluster for zone nodes to avoid clutter
-                                        origin_cluster = MarkerCluster(name="Origin Zone Locations")
-                                        dest_cluster = MarkerCluster(name="Destination Zone Locations")
+                                        origin_cluster = folium.FeatureGroup(name="Origin Zone Locations", show=True)
+                                        dest_cluster = folium.FeatureGroup(name="Destination Zone Locations", show=True)
 
                                         # Add site marker
                                         folium.Marker(
