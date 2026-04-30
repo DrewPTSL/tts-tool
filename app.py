@@ -18,6 +18,7 @@ from shapely.geometry import Point
 from folium.plugins import Search
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import streamlit.components.v1 as components
+import time
 
 @st.cache_data(show_spinner="Loading zone data...")
 def load_zones_data(data_choice):
@@ -339,17 +340,19 @@ try:
                 status_text = st.empty()
                 
                 try:
-                    def get_route(origin_lat, origin_lon, dest_lat, dest_lon):
+                    def get_route(origin_lat, origin_lon, dest_lat, dest_lon, retries=3):
                         url = (f'http://router.project-osrm.org/route/v1/driving/'
                             f'{origin_lon},{origin_lat};{dest_lon},{dest_lat}?overview=full')
-                        try:
-                            response = requests.get(url, timeout=10)
-                            if response.status_code == 200:
-                                data = response.json()
-                                if data['code'] == 'Ok':
-                                    return data['routes'][0]['geometry']
-                        except requests.RequestException:
-                            pass
+                        for attempt in range(retries):
+                            try:
+                                response = requests.get(url, timeout=10)
+                                if response.status_code == 200:
+                                    data = response.json()
+                                    if data['code'] == 'Ok':
+                                        return data['routes'][0]['geometry']
+                            except requests.RequestException:
+                                if attempt < retries - 1:
+                                    time.sleep(1)
                         return None
                     
                     def fetch_routes_parallel(route_requests, max_workers=10, progress_callback=None, status_callback=None):
@@ -754,7 +757,7 @@ try:
                                 for sheet_name in ['Route Results', 'Location Details']:
                                     sheet = writer.sheets[sheet_name]
                                     if sheet_name == 'Location Details':
-                                        apply_header_formatting(sheet, exclude_columns=[5,6,9,11])
+                                        apply_header_formatting(sheet)
                                     else:
                                         apply_header_formatting(sheet)
                                     autofit_columns(sheet)
@@ -937,9 +940,8 @@ try:
                             # Add a toggle button above the map
                             show_route_map = st.toggle('Show Route Map', value=True)
                             zone_lookup = st.session_state.get('zone_lookup', {})
-                            if show_route_map:
                                 # Only rebuild if results have changed
-                                if 'route_map_html' not in st.session_state or \
+                            if 'route_map_html' not in st.session_state or \
                                 st.session_state.get('route_map_results_id') != id(st.session_state.results_df):
                                     
                                     with st.spinner("Generating map..."):
