@@ -4,7 +4,6 @@ import geopandas as gpd
 from shapely.geometry import Point
 from selenium import webdriver
 from selenium.webdriver.chrome.service import Service
-from webdriver_manager.chrome import ChromeDriverManager
 from selenium.webdriver.common.by import By
 from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.support.ui import WebDriverWait
@@ -46,6 +45,8 @@ def run_webscraper(site_zones, time_periods, data_choice, custom_time=None, head
     chrome_options = webdriver.ChromeOptions()
     chrome_options.add_argument("--start-maximized")
     chrome_options.add_argument("--window-size=1920,1080")
+    chrome_options.add_argument("--no-sandbox")
+    chrome_options.add_argument("--disable-dev-shm-usage")
     
     download_dir = str(Path.home() / "Downloads")  # Make sure this path exists
     chrome_options.add_experimental_option("prefs", {
@@ -70,8 +71,10 @@ def run_webscraper(site_zones, time_periods, data_choice, custom_time=None, head
 
     try:
         # Initialize the Chrome WebDriver using webdriver_manager
-        driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), 
-                                  options=chrome_options)
+        driver = webdriver.Chrome(
+            service=Service("/usr/bin/chromedriver"),
+            options=chrome_options
+        )
         
         # Login process
         update_status("Logging into TTS system...")
