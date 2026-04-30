@@ -378,28 +378,33 @@ try:
 
                     def passes_through(route_geometry, poi_list, threshold=0.1):
                         route_coords = decode(route_geometry)
-                        matching_pois = []
-                        
+                        matched_pois = {}  # keyed by poi id — deduplicates automatically
+
                         for route_point in route_coords:
                             for poi in poi_list:
-                                poi_threshold = poi.get('threshold', threshold)
+                                poi_id = poi['id']
+                                if poi_id in matched_pois:
+                                    continue  # already matched this POI, skip all future checks for it
+
                                 distance = geodesic(route_point, poi['coordinates']).km
-                                if distance <= poi_threshold:
-                                    matching_pois.append({
-                                        'id': poi['id'],
+                                if distance <= poi.get('threshold', threshold):
+                                    matched_pois[poi_id] = {
+                                        'id': poi_id,
                                         'name': poi['name'],
                                         'coordinates': poi['coordinates'],
-                                        'threshold': poi_threshold,
+                                        'threshold': poi.get('threshold', threshold),
                                         'actual_distance': distance
-                                    })
-                        
-                        # Remove duplicate POIs
-                        matching_pois = [dict(t) for t in {tuple(d.items()) for d in matching_pois}]
-                        
+                                    }
+
+                            # Early exit if all POIs already matched
+                            if len(matched_pois) == len(poi_list):
+                                break
+
+                        intersected = list(matched_pois.values())
                         return {
-                            'passes': bool(matching_pois),
-                            'num_pois_intersected': len(matching_pois),
-                            'intersected_pois': matching_pois
+                            'passes': bool(intersected),
+                            'num_pois_intersected': len(intersected),
+                            'intersected_pois': intersected
                         }
 
                     def process_tts_file(content, zones_df, progress_callback=None, status_callback=None):
