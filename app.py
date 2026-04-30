@@ -147,7 +147,44 @@ if site_lon and data_choice:  # Add data_choice check
 # POI Management Section
 st.markdown("### Points of Interest")
 
-
+with st.expander("📋 Paste from Excel (🚨 Delete top POI before importing 🚨)"):
+    pasted = st.text_area(
+        "Paste rows copied from Excel (expects columns: POI_ID, POI Name, Coordinates, Threshold (km))",
+        height=150,
+        placeholder="POI_ID\tPOI Name\tCoordinates\tThreshold (km)\nPOI_1\tNorth via West 5th Street\t43.2043, -79.8971\t0.05"
+    )
+    if st.button("Import"):
+        if pasted.strip():
+            new_rows = []
+            lines = pasted.strip().split('\n')
+            for line in lines:
+                # Skip header row
+                if line.lower().startswith('poi_id'):
+                    continue
+                parts = line.split('\t')
+                if len(parts) >= 4:
+                    name = parts[1].strip()
+                    coords = parts[2].strip()
+                    try:
+                        threshold_km = float(parts[3].strip())
+                        # Convert km to metres for the slider
+                        threshold_m = int(threshold_km * 1000)
+                    except ValueError:
+                        threshold_m = 50
+                    if name and coords:
+                        new_rows.append({
+                            "name": name,
+                            "coords": coords,
+                            "threshold": threshold_m
+                        })
+            if new_rows:
+                # Remove any blank rows before importing
+                st.session_state.rows = [row for row in st.session_state.rows if row["name"] and row["coords"]]
+                st.session_state.rows = new_rows
+                st.success(f"Imported {len(new_rows)} POIs successfully!")
+                st.rerun()
+            else:
+                st.error("No valid rows found — make sure columns are tab-separated with POI_ID, POI Name, Coordinates, and Threshold (km).")
 
 # Button to add a new row
 if st.button("Add New Row"):
@@ -1176,16 +1213,16 @@ try:
                                         st.session_state.route_map_html = route_map.get_root().render()
                                         st.session_state.route_map_results_id = id(st.session_state.results_df)
 
-                                # Download button uses cached HTML
-                                ste.download_button(
-                                    label="Download Route Map",
-                                    data=st.session_state.route_map_html,
-                                    file_name="Route_map.html",
-                                    mime="text/html"
+                            # Download button uses cached HTML
+                            ste.download_button(
+                                label="Download Route Map",
+                                data=st.session_state.route_map_html,
+                                file_name="Route_map.html",
+                                mime="text/html"
                                 )
 
-                                st.subheader("Route Map")
-                                components.html(st.session_state.route_map_html, height=600)
+                            st.subheader("Route Map")
+                            components.html(st.session_state.route_map_html, height=600)
 
                 except Exception as e:
                     status_text.text(f"Error during processing: {str(e)}")
