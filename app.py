@@ -728,15 +728,14 @@ try:
 
                                 # Create POI Summary DataFrame
                                 poi_summary_df = pd.DataFrame([{
-                                    'POI Name': poi['name'],
                                     'POI_ID': poi['id'],
+                                    'POI Name': poi['name'],
                                     'Latitude': poi['coordinates'][0],
                                     'Longitude': poi['coordinates'][1],
                                     'Threshold (km)': poi['threshold']
                                 } for poi in st.session_state.pois])
 
                                 # Create Site Summary DataFrame
-                                
                                 site_summary_df = pd.DataFrame([{
                                     f'Site {zone_col} Zone': zone,
                                     'Zone Latitude': zones_df[zones_df[zone_col] == zone]['Latitude'].values[0],
@@ -744,21 +743,21 @@ try:
                                 } for zone in site_zones])
 
                                 site_location_summary_df = pd.DataFrame([{
-                                    f'Site Latitude': site_lat,
+                                    'Site Latitude': site_lat,
                                     'Site Longitude': site_lon
                                 }])
 
-                                # Write sheets and apply formatting
+                                # Write sheets
                                 poi_summary_df.to_excel(writer, sheet_name='Location Details', startrow=0, startcol=0, index=False)
                                 site_summary_df.to_excel(writer, sheet_name='Location Details', startrow=0, startcol=poi_summary_df.shape[1] + 2, index=False)
-                                site_location_summary_df.to_excel(writer, sheet_name='Location Details', startrow=0, startcol=poi_summary_df.shape[1] + 6, index=False)
-                                
+                                site_location_summary_df.to_excel(writer, sheet_name='Location Details', startrow=0, startcol=poi_summary_df.shape[1] + site_summary_df.shape[1] + 3, index=False)
+
                                 # Apply Excel formatting
                                 workbook = writer.book
                                 for sheet_name in ['Route Results', 'Location Details']:
                                     sheet = writer.sheets[sheet_name]
                                     if sheet_name == 'Location Details':
-                                        apply_header_formatting(sheet, exclude_columns=[6,7,11])
+                                        apply_header_formatting(sheet, exclude_columns=[6, 7, 11])
                                     else:
                                         apply_header_formatting(sheet)
                                     autofit_columns(sheet)
@@ -767,7 +766,7 @@ try:
                                 calc_sheet = create_poi_analysis_sheet(workbook, st.session_state.pois)
                                 format_poi_analysis_sheet(calc_sheet, len(st.session_state.pois))
 
-                                # Create Raw Text sheet if content available
+                                # Create Raw Text sheet
                                 create_raw_text_sheet(workbook, content)
 
                             return output.getvalue()
