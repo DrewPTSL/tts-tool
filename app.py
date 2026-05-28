@@ -73,6 +73,9 @@ if 'results_df' not in st.session_state:
 if "rows" not in st.session_state:
     st.session_state.rows = [{"name": "", "coords": "", "threshold": 50}]
 
+if "site_zones_val" not in st.session_state:
+    st.session_state["site_zones_val"] = []    
+
 
 # Title and description
 st.title("TTS Route Analysis Tool")
@@ -107,9 +110,12 @@ with col1:
     if not data_choice:
         site_zones = st.multiselect("Site Zone", [], disabled=True)
     elif data_choice == "2006 Zones":
-        site_zones = st.multiselect("Site Zone", zones_df['GTA06'])
+        site_zones = st.multiselect("Site Zone", zones_df['GTA06'], 
+                                     default=st.session_state["site_zones_val"])
     else:
-        site_zones = st.multiselect("Site Zone", zones_df['TTS2022'])
+        site_zones = st.multiselect("Site Zone", zones_df['TTS2022'], 
+                                     default=st.session_state["site_zones_val"])
+    st.session_state["site_zones_val"] = site_zones
 
 with col2:
     coords_input = st.text_input(
@@ -132,7 +138,7 @@ else:
 
 ## Site Zone Matching
 
-if site_lon and data_choice:  # Add data_choice check
+if site_lon and data_choice:
     point = Point(site_lon, site_lat)
     matching_polygon = gdf[gdf.contains(point)]
 
@@ -140,8 +146,16 @@ if site_lon and data_choice:  # Add data_choice check
         if data_choice == "2006 Zones":
             suggested_zone = matching_polygon.iloc[0]['gta06']
         else:
-            suggested_zone = matching_polygon.iloc[0]['TTS2022'] 
+            suggested_zone = matching_polygon.iloc[0]['TTS2022']
+        
         st.write(f"Recommended zone based on coordinates: {suggested_zone}")
+        
+        if st.button("➕ Add as Site Zone"):
+            if suggested_zone not in st.session_state["site_zones_val"]:
+                st.session_state["site_zones_val"].append(suggested_zone)
+                st.rerun()
+            else:
+                st.info("Zone already added.")
 
 
 # POI Management Section
@@ -251,7 +265,7 @@ if valid_coords:
 
         # Only display the map if toggle is on
         if show_map:
-            m = folium.Map(location=[site_lat, site_lon], zoom_start=12, width='100%')
+            m = folium.Map(location=[site_lat, site_lon], zoom_start=12, width='100%',tiles="CartoDB positron")
 
             # Add site zone marker
             sitezone_layer = folium.FeatureGroup(name="Site Zone Marker", show=True)
@@ -1001,7 +1015,7 @@ try:
                                             """Scale route thickness between min and max weight based on traffic volume"""
                                             return min_weight + (max_weight - min_weight) * (total / max_traffic)
 
-                                        route_map = folium.Map(location=[site_lat, site_lon], zoom_start=10)
+                                        route_map = folium.Map(location=[site_lat, site_lon], zoom_start=10,tiles="CartoDB positron")
 
                                         # Create feature groups
                                         site_layer = folium.FeatureGroup(name="Site Location", show=True)
