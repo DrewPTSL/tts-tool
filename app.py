@@ -71,11 +71,33 @@ if 'results_df' not in st.session_state:
 
 # Initialize rows if not in session_state
 if "rows" not in st.session_state:
-    st.session_state.rows = [{"name": "", "coords": "", "threshold": 50}]
+    st.session_state.rows = [{"id": 0, "name": "", "coords": "", "threshold": 50}]
+if "row_id_counter" not in st.session_state:
+    st.session_state.row_id_counter = 1
 
 if "site_zones_val" not in st.session_state:
     st.session_state["site_zones_val"] = []    
 
+FOLIUM_TO_CSS = {
+    'blue': '#4169E1',
+    'red': '#DC143C',
+    'green': '#228B22',
+    'purple': '#800080',
+    'orange': '#FF8C00',
+    'darkred': '#8B0000',
+    'lightred': '#FF6B6B',
+    'beige': '#F5F5DC',
+    'darkblue': '#00008B',
+    'darkgreen': '#006400',
+}
+
+POI_COLOURS = ['blue', 'red', 'green', 'purple', 'orange', 'darkred',
+               'lightred', 'beige', 'darkblue', 'darkgreen']
+
+poi_colour_map = {
+    poi['name']: POI_COLOURS[i % len(POI_COLOURS)]
+    for i, poi in enumerate(st.session_state.pois)
+}
 
 # Title and description
 st.title("TTS Route Analysis Tool")
@@ -161,7 +183,7 @@ if site_lon and data_choice:
 # POI Management Section
 st.markdown("### Points of Interest")
 
-with st.expander("📋 Paste from Excel (🚨 Delete top POI before importing 🚨)"):
+with st.expander("📋 Paste from Excel"):
     pasted = st.text_area(
         "Paste rows copied from Excel (expects columns: POI_ID, POI Name, Coordinates, Threshold (km))",
         height=150,
@@ -172,7 +194,6 @@ with st.expander("📋 Paste from Excel (🚨 Delete top POI before importing �
             new_rows = []
             lines = pasted.strip().split('\n')
             for line in lines:
-                # Skip header row
                 if line.lower().startswith('poi_id'):
                     continue
                 parts = line.split('\t')
@@ -180,9 +201,7 @@ with st.expander("📋 Paste from Excel (🚨 Delete top POI before importing �
                     name = parts[1].strip()
                     coords = parts[2].strip()
                     try:
-                        threshold_km = float(parts[3].strip())
-                        # Convert km to metres for the slider
-                        threshold_m = int(threshold_km * 1000)
+                        threshold_m = int(float(parts[3].strip()) * 1000)
                     except ValueError:
                         threshold_m = 50
                     if name and coords:
@@ -191,37 +210,45 @@ with st.expander("📋 Paste from Excel (🚨 Delete top POI before importing �
                             "coords": coords,
                             "threshold": threshold_m
                         })
+            
             if new_rows:
-                # Remove any blank rows before importing
-                st.session_state.rows = [row for row in st.session_state.rows if row["name"] and row["coords"]]
-                st.session_state.rows = new_rows
-                st.success(f"Imported {len(new_rows)} POIs successfully!")
+                existing = [row for row in st.session_state.rows if row["name"] and row["coords"]]
+                for row in new_rows:
+                    row["id"] = st.session_state.row_id_counter
+                    st.session_state.row_id_counter += 1
+                st.session_state.rows = existing + new_rows
+                st.success(f"Imported {len(new_rows)} POIs. {len(existing)} existing POI(s) kept.")
                 st.rerun()
             else:
                 st.error("No valid rows found — make sure columns are tab-separated with POI_ID, POI Name, Coordinates, and Threshold (km).")
 
 # Button to add a new row
 if st.button("Add New Row"):
-    st.session_state.rows.append({"name": "", "coords": "", "threshold": 50})
+    st.session_state.rows.append({
+        "id": st.session_state.row_id_counter,
+        "name": "",
+        "coords": "",
+        "threshold": 50
+    })
+    st.session_state.row_id_counter += 1
 
 num_rows = 1
 
 # Display each row
 for i, row in enumerate(st.session_state.rows):
+    uid = row["id"]
     col1, col2, col3, col4 = st.columns([2, 2, 1, 0.5])
     with col1:
         row["name"] = st.text_input(
             "POI Name",
-            key=f"name_{i}",
-            value=row["name"],
-            help="Enter name (e.g. North via Greenhill Road)"
+            key=f"name_{uid}",
+            value=row["name"]
         )
     with col2:
         row["coords"] = st.text_input(
             "Coordinates (Latitude, Longitude)",
-            key=f"coords_{i}",
-            value=row["coords"],
-            help="Enter coordinates in format: latitude, longitude"
+            key=f"coords_{uid}",
+            value=row["coords"]
         )
     with col3:
         row["threshold"] = st.slider(
@@ -229,11 +256,10 @@ for i, row in enumerate(st.session_state.rows):
             min_value=1,
             max_value=500,
             value=row["threshold"],
-            key=f"threshold_{i}",
-            help="Select the threshold radius around the POI"
+            key=f"threshold_{uid}"
         )
     with col4:
-        if st.button("🗑️", key=f"delete_{i}", help="Delete POI"):
+        if st.button("🗑️", key=f"delete_{uid}", help="Delete POI"):
             st.session_state.rows.pop(i)
             st.rerun()
 
@@ -265,7 +291,7 @@ if valid_coords:
 
         # Only display the map if toggle is on
         if show_map:
-            m = folium.Map(location=[site_lat, site_lon], zoom_start=12, width='100%',tiles="CartoDB positron")
+            m = folium.Map(location=[site_lat, site_lon], zoom_start=12, width='100%',tiles="CartoDB Voyager")
 
             # Add site zone marker
             sitezone_layer = folium.FeatureGroup(name="Site Zone Marker", show=True)
@@ -719,14 +745,21 @@ try:
                                 total_traffic = origin_summary.sum()
                                 # Calculate percentages
                                 origin_percentages = (origin_summary / total_traffic * 100).round(1)
+
+                                poi_names_in_order = origin_summary.index.tolist()
+                                
                                 
                                 # Create interactive pie chart
                                 fig1 = px.pie(
                                     values=origin_percentages.values,
                                     names=origin_percentages.index,
-                                    custom_data=[origin_summary.values],  # For formatting
-                                    title="Origin to Site"
+                                    custom_data=[origin_summary.values],
+                                    title="Origin to Site",
+                                    color=origin_percentages.index,
+                                    color_discrete_map={name: FOLIUM_TO_CSS.get(poi_colour_map.get(name, 'gray'), '#808080') 
+                                                        for name in origin_percentages.index}
                                 )
+                                
                                 fig1.update_traces(
                                     textposition='inside',
                                     hovertemplate="<b>%{label}</b><br>" +
@@ -747,14 +780,20 @@ try:
                                 total_traffic = dest_summary.sum()
                                 # Calculate percentages
                                 dest_percentages = (dest_summary / total_traffic * 100).round(1)
-                                
+
+                                poi_names_in_order = dest_summary.index.tolist()
+                                                                
                                 # Create interactive pie chart
                                 fig2 = px.pie(
                                     values=dest_percentages.values,
                                     names=dest_percentages.index,
-                                    custom_data=[dest_summary.values],  # For formatting
-                                    title="Site to Destination"
+                                    custom_data=[dest_summary.values],
+                                    title="Site to Destination",
+                                    color=dest_percentages.index,
+                                    color_discrete_map={name: FOLIUM_TO_CSS.get(poi_colour_map.get(name, 'gray'), '#808080') 
+                                                        for name in dest_percentages.index}
                                 )
+                                
                                 fig2.update_traces(
                                     textposition='inside',
                                     hovertemplate="<b>%{label}</b><br>" +
@@ -989,7 +1028,6 @@ try:
 
                         if st.session_state.results_df is not None and not st.session_state.results_df.empty:
                             # Add a toggle button above the map
-                            show_route_map = st.toggle('Show Route Map', value=True)
                             zone_lookup = st.session_state.get('zone_lookup', {})
                                 # Only rebuild if results have changed
                             if 'route_map_html' not in st.session_state or \
@@ -997,14 +1035,6 @@ try:
                                     
                                     with st.spinner("Generating map..."):
 
-                                        # Build a colour map for POIs — one distinct colour per POI
-                                        POI_COLOURS = ['blue', 'red', 'green', 'purple', 'orange', 'darkred', 
-                                                    'lightred', 'beige', 'darkblue', 'darkgreen']
-
-                                        poi_colour_map = {
-                                            poi['name']: POI_COLOURS[i % len(POI_COLOURS)] 
-                                            for i, poi in enumerate(st.session_state.pois)
-                                        }
 
                                         # Calculate max traffic for scaling route thickness
                                         max_traffic = st.session_state.results_df[
@@ -1015,7 +1045,7 @@ try:
                                             """Scale route thickness between min and max weight based on traffic volume"""
                                             return min_weight + (max_weight - min_weight) * (total / max_traffic)
 
-                                        route_map = folium.Map(location=[site_lat, site_lon], zoom_start=10,tiles="CartoDB positron")
+                                        route_map = folium.Map(location=[site_lat, site_lon], zoom_start=10,tiles="CartoDB Voyager")
 
                                         # Create feature groups
                                         site_layer = folium.FeatureGroup(name="Site Location", show=True)
@@ -1178,13 +1208,18 @@ try:
                                             colour = poi_colour_map[poi['name']]
                                             traffic_in  = poi_traffic_in.get(poi['name'], 0)
                                             traffic_out = poi_traffic_out.get(poi['name'], 0)
+                                            total_in    = sum(poi_traffic_in.values()) or 1
+                                            total_out   = sum(poi_traffic_out.values()) or 1
+                                            pct_in      = round(traffic_in / total_in * 100, 1)
+                                            pct_out     = round(traffic_out / total_out * 100, 1)
                                             legend_html += f"""
                                             <div style="margin-bottom:6px;">
                                                 <span style="display:inline-block; width:14px; height:14px; 
                                                             background:{colour}; border-radius:50%; 
                                                             margin-right:6px; vertical-align:middle;"></span>
                                                 <b>{poi['name']}</b><br>
-                                                <span style="margin-left:20px;">In: {traffic_in} &nbsp;|&nbsp; Out: {traffic_out}</span>
+                                                <span style="margin-left:20px;">In: {traffic_in} ({pct_in}%)</span><br>
+                                                <span style="margin-left:20px;">Out: {traffic_out} ({pct_out}%)</span>
                                             </div>
                                             """
                                         legend_html += "</div>"
