@@ -323,7 +323,7 @@ if data_choice:
             )
 
     # Download button
-    if st.button("Processs Files"):
+    if st.button("Process Files"):
         if not site_zone:
             st.error("Please select at least one site zone")
         elif not time_choice:

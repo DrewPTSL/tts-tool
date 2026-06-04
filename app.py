@@ -16,6 +16,9 @@ import matplotlib.pyplot as plt
 import geopandas as gpd
 from shapely.geometry import Point
 from folium.plugins import Search
+from concurrent.futures import ThreadPoolExecutor, as_completed
+import streamlit.components.v1 as components
+import time
 
 @st.cache_data(show_spinner="Loading zone data...")
 def load_zones_data(data_choice):
@@ -68,8 +71,33 @@ if 'results_df' not in st.session_state:
 
 # Initialize rows if not in session_state
 if "rows" not in st.session_state:
-    st.session_state.rows = [{"name": "", "coords": "", "threshold": 50}]
+    st.session_state.rows = [{"id": 0, "name": "", "coords": "", "threshold": 50}]
+if "row_id_counter" not in st.session_state:
+    st.session_state.row_id_counter = 1
 
+if "site_zones_val" not in st.session_state:
+    st.session_state["site_zones_val"] = []    
+
+FOLIUM_TO_CSS = {
+    'blue': '#4169E1',
+    'red': '#DC143C',
+    'green': '#228B22',
+    'purple': '#800080',
+    'orange': '#FF8C00',
+    'darkred': '#8B0000',
+    'lightred': '#FF6B6B',
+    'beige': '#F5F5DC',
+    'darkblue': '#00008B',
+    'darkgreen': '#006400',
+}
+
+POI_COLOURS = ['blue', 'red', 'green', 'purple', 'orange', 'darkred',
+               'lightred', 'beige', 'darkblue', 'darkgreen']
+
+poi_colour_map = {
+    poi['name']: POI_COLOURS[i % len(POI_COLOURS)]
+    for i, poi in enumerate(st.session_state.pois)
+}
 
 # Title and description
 st.title("TTS Route Analysis Tool")
@@ -104,9 +132,12 @@ with col1:
     if not data_choice:
         site_zones = st.multiselect("Site Zone", [], disabled=True)
     elif data_choice == "2006 Zones":
-        site_zones = st.multiselect("Site Zone", zones_df['GTA06'])
+        site_zones = st.multiselect("Site Zone", zones_df['GTA06'], 
+                                     default=st.session_state["site_zones_val"])
     else:
-        site_zones = st.multiselect("Site Zone", zones_df['TTS2022'])
+        site_zones = st.multiselect("Site Zone", zones_df['TTS2022'], 
+                                     default=st.session_state["site_zones_val"])
+    st.session_state["site_zones_val"] = site_zones
 
 with col2:
     coords_input = st.text_input(
@@ -129,7 +160,7 @@ else:
 
 ## Site Zone Matching
 
-if site_lon and data_choice:  # Add data_choice check
+if site_lon and data_choice:
     point = Point(site_lon, site_lat)
     matching_polygon = gdf[gdf.contains(point)]
 
@@ -137,37 +168,87 @@ if site_lon and data_choice:  # Add data_choice check
         if data_choice == "2006 Zones":
             suggested_zone = matching_polygon.iloc[0]['gta06']
         else:
-            suggested_zone = matching_polygon.iloc[0]['TTS2022'] 
+            suggested_zone = matching_polygon.iloc[0]['TTS2022']
+        
         st.write(f"Recommended zone based on coordinates: {suggested_zone}")
+        
+        if st.button("➕ Add as Site Zone"):
+            if suggested_zone not in st.session_state["site_zones_val"]:
+                st.session_state["site_zones_val"].append(suggested_zone)
+                st.rerun()
+            else:
+                st.info("Zone already added.")
 
 
 # POI Management Section
 st.markdown("### Points of Interest")
 
-
+with st.expander("📋 Paste from Excel"):
+    pasted = st.text_area(
+        "Paste rows copied from Excel (expects columns: POI_ID, POI Name, Coordinates, Threshold (km))",
+        height=150,
+        placeholder="POI_ID\tPOI Name\tCoordinates\tThreshold (km)\nPOI_1\tNorth via West 5th Street\t43.2043, -79.8971\t0.05"
+    )
+    if st.button("Import"):
+        if pasted.strip():
+            new_rows = []
+            lines = pasted.strip().split('\n')
+            for line in lines:
+                if line.lower().startswith('poi_id'):
+                    continue
+                parts = line.split('\t')
+                if len(parts) >= 4:
+                    name = parts[1].strip()
+                    coords = parts[2].strip()
+                    try:
+                        threshold_m = int(float(parts[3].strip()) * 1000)
+                    except ValueError:
+                        threshold_m = 50
+                    if name and coords:
+                        new_rows.append({
+                            "name": name,
+                            "coords": coords,
+                            "threshold": threshold_m
+                        })
+            
+            if new_rows:
+                existing = [row for row in st.session_state.rows if row["name"] and row["coords"]]
+                for row in new_rows:
+                    row["id"] = st.session_state.row_id_counter
+                    st.session_state.row_id_counter += 1
+                st.session_state.rows = existing + new_rows
+                st.success(f"Imported {len(new_rows)} POIs. {len(existing)} existing POI(s) kept.")
+                st.rerun()
+            else:
+                st.error("No valid rows found — make sure columns are tab-separated with POI_ID, POI Name, Coordinates, and Threshold (km).")
 
 # Button to add a new row
 if st.button("Add New Row"):
-    st.session_state.rows.append({"name": "", "coords": "", "threshold": 50})
+    st.session_state.rows.append({
+        "id": st.session_state.row_id_counter,
+        "name": "",
+        "coords": "",
+        "threshold": 50
+    })
+    st.session_state.row_id_counter += 1
 
 num_rows = 1
 
 # Display each row
 for i, row in enumerate(st.session_state.rows):
+    uid = row["id"]
     col1, col2, col3, col4 = st.columns([2, 2, 1, 0.5])
     with col1:
         row["name"] = st.text_input(
             "POI Name",
-            key=f"name_{i}",
-            value=row["name"],
-            help="Enter name (e.g. North via Greenhill Road)"
+            key=f"name_{uid}",
+            value=row["name"]
         )
     with col2:
         row["coords"] = st.text_input(
             "Coordinates (Latitude, Longitude)",
-            key=f"coords_{i}",
-            value=row["coords"],
-            help="Enter coordinates in format: latitude, longitude"
+            key=f"coords_{uid}",
+            value=row["coords"]
         )
     with col3:
         row["threshold"] = st.slider(
@@ -175,11 +256,10 @@ for i, row in enumerate(st.session_state.rows):
             min_value=1,
             max_value=500,
             value=row["threshold"],
-            key=f"threshold_{i}",
-            help="Select the threshold radius around the POI"
+            key=f"threshold_{uid}"
         )
     with col4:
-        if st.button("🗑️", key=f"delete_{i}", help="Delete POI"):
+        if st.button("🗑️", key=f"delete_{uid}", help="Delete POI"):
             st.session_state.rows.pop(i)
             st.rerun()
 
@@ -211,7 +291,7 @@ if valid_coords:
 
         # Only display the map if toggle is on
         if show_map:
-            m = folium.Map(location=[site_lat, site_lon], zoom_start=12, width='100%')
+            m = folium.Map(location=[site_lat, site_lon], zoom_start=12, width='100%',tiles="CartoDB Voyager")
 
             # Add site zone marker
             sitezone_layer = folium.FeatureGroup(name="Site Zone Marker", show=True)
@@ -312,13 +392,11 @@ if valid_coords:
 ## Main Processing Section
 try:
     
-    if data_choice == "2006 Zones":
-        zone_col = 'GTA06'
-        zones_df = pd.read_csv('2006Zones.csv')
-        
-    else:
-        zone_col = 'TTS2022'
-        zones_df = pd.read_csv('2022Zones.csv')
+    if not data_choice:
+        st.warning("Please select a data year")
+        st.stop()
+
+    zones_df, zone_col, region_col = load_zones_data(data_choice)
 
     # zones_df, zone_col, region_col = load_zones_data(data_choice)
 
@@ -339,101 +417,123 @@ try:
                 status_text = st.empty()
                 
                 try:
-                    def get_route(origin_lat, origin_lon, dest_lat, dest_lon):
-                        url = f'http://router.project-osrm.org/route/v1/driving/{origin_lon},{origin_lat};{dest_lon},{dest_lat}?overview=full'
-                        response = requests.get(url)
-                        if response.status_code == 200:
-                            data = response.json()
-                            if data['code'] == 'Ok':
-                                return data['routes'][0]['geometry']
+                    def get_route(origin_lat, origin_lon, dest_lat, dest_lon, retries=3):
+                        url = (f'http://router.project-osrm.org/route/v1/driving/'
+                            f'{origin_lon},{origin_lat};{dest_lon},{dest_lat}?overview=full')
+                        for attempt in range(retries):
+                            try:
+                                response = requests.get(url, timeout=10)
+                                if response.status_code == 200:
+                                    data = response.json()
+                                    if data['code'] == 'Ok':
+                                        return data['routes'][0]['geometry']
+                            except requests.RequestException:
+                                if attempt < retries - 1:
+                                    time.sleep(1)
                         return None
+                    
+                    def fetch_routes_parallel(route_requests, max_workers=10, progress_callback=None, status_callback=None):
+                        results = {}
+                        total = len(route_requests)
+                        completed = 0
+
+                        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+                            futures = {
+                                executor.submit(
+                                    get_route,
+                                    r['origin_lat'], r['origin_lon'],
+                                    r['dest_lat'],   r['dest_lon']
+                                ): r['key']
+                                for r in route_requests
+                            }
+                            for future in as_completed(futures):
+                                key = futures[future]
+                                completed += 1
+                                try:
+                                    results[key] = future.result()
+                                except Exception:
+                                    results[key] = None
+
+                                if progress_callback:
+                                    # Fetching occupies 10% to 80% of the bar
+                                    progress_callback(10 + int(70 * completed / total))
+                                if status_callback:
+                                    failed = sum(1 for v in results.values() if v is None)
+                                    status_callback(
+                                        f"Fetching routes... {completed} of {total} complete"
+                                        + (f" ({failed} failed)" if failed > 0 else "")
+                                    )
+
+                        return results
 
                     def passes_through(route_geometry, poi_list, threshold=0.1):
                         route_coords = decode(route_geometry)
-                        matching_pois = []
-                        
+                        matched_pois = {}  # keyed by poi id — deduplicates automatically
+
                         for route_point in route_coords:
                             for poi in poi_list:
-                                poi_threshold = poi.get('threshold', threshold)
+                                poi_id = poi['id']
+                                if poi_id in matched_pois:
+                                    continue  # already matched this POI, skip all future checks for it
+
                                 distance = geodesic(route_point, poi['coordinates']).km
-                                if distance <= poi_threshold:
-                                    matching_pois.append({
-                                        'id': poi['id'],
+                                if distance <= poi.get('threshold', threshold):
+                                    matched_pois[poi_id] = {
+                                        'id': poi_id,
                                         'name': poi['name'],
                                         'coordinates': poi['coordinates'],
-                                        'threshold': poi_threshold,
+                                        'threshold': poi.get('threshold', threshold),
                                         'actual_distance': distance
-                                    })
-                        
-                        # Remove duplicate POIs
-                        matching_pois = [dict(t) for t in {tuple(d.items()) for d in matching_pois}]
-                        
+                                    }
+
+                            # Early exit if all POIs already matched
+                            if len(matched_pois) == len(poi_list):
+                                break
+
+                        intersected = list(matched_pois.values())
                         return {
-                            'passes': bool(matching_pois),
-                            'num_pois_intersected': len(matching_pois),
-                            'intersected_pois': matching_pois
+                            'passes': bool(intersected),
+                            'num_pois_intersected': len(intersected),
+                            'intersected_pois': intersected
                         }
 
                     def process_tts_file(content, zones_df, progress_callback=None, status_callback=None):
-                        # Extract table from text file
                         table_pattern = re.compile(r"^\s*(\d+)\s+(\d+)\s+(\d+)\s*$", re.MULTILINE)
                         matches = table_pattern.findall(content)
                         zone_col = 'GTA06' if data_choice == "2006 Zones" else 'TTS2022'
                         df_origins = pd.DataFrame(matches, columns=[f"{zone_col}_orig", f"{zone_col}_dest", "total"])
                         df_origins = df_origins.astype({f"{zone_col}_orig": int, f"{zone_col}_dest": int, "total": int})
-                        
-                        results = []
-                        total_rows = 0
+
+                        zone_lookup = zones_df.set_index(zone_col)[['Latitude', 'Longitude']].to_dict('index')
+
+                        # --- Phase 1: Plan routes ---
+                        if status_callback:
+                            status_callback(f"Planning routes for {len(site_zones)} site zone(s)...")
+                        if progress_callback:
+                            progress_callback(0)
+
+                        route_requests = []
+                        planned_rows = []
+
                         for current_site_zone in site_zones:
-                            # Count rows where origin or destination is the site zone
-                            relevant_rows = len(df_origins[
-                                (df_origins[f"{zone_col}_orig"] == current_site_zone) | 
-                                (df_origins[f"{zone_col}_dest"] == current_site_zone)
-                            ])
-                            # Add extra count for routes between this site zone and other site zones
-                            other_site_zones = [zone for zone in site_zones if zone != current_site_zone]
-                            for other_zone in other_site_zones:
-                                between_zones = len(df_origins[
-                                    ((df_origins[f"{zone_col}_orig"] == current_site_zone) & 
-                                    (df_origins[f"{zone_col}_dest"] == other_zone)) |
-                                    ((df_origins[f"{zone_col}_orig"] == other_zone) & 
-                                    (df_origins[f"{zone_col}_dest"] == current_site_zone))
-                                ])
-                                total_rows += between_zones
-                            
-                            total_rows += relevant_rows
-                        processed_rows = 0
-                        
-                        for current_site_zone in site_zones:
-                            # Get site zone coordinates
-                            site_zone_row = zones_df[zones_df[zone_col] == current_site_zone]
-                            site_zone_lat = site_zone_row['Latitude'].values[0]
-                            site_zone_lon = site_zone_row['Longitude'].values[0]
-                            
+                            if current_site_zone not in zone_lookup:
+                                continue
+                            site_zone_coords = zone_lookup[current_site_zone]
+                            szlat = site_zone_coords['Latitude']
+                            szlon = site_zone_coords['Longitude']
+
                             for idx, row in df_origins.iterrows():
                                 origin_id = row[f'{zone_col}_orig']
-                                dest_id = row[f'{zone_col}_dest']
-                                
-                                # Only process and count rows that involve the current site zone
+                                dest_id   = row[f'{zone_col}_dest']
+
                                 if origin_id != current_site_zone and dest_id != current_site_zone:
                                     continue
-                                    
-                                if progress_callback:
-                                    processed_rows += 1
-                                    progress = (processed_rows / total_rows) * 100
-                                    progress_callback(progress)
-                                if status_callback:
-                                    status_callback(f"Processing route {processed_rows} of {total_rows}")
-                                    
-                                origin_id = row[f'{zone_col}_orig']
-                                dest_id = row[f'{zone_col}_dest']
-                                
-                                # Check if zones exist
-                                origin_row = zones_df[zones_df[zone_col] == origin_id]
-                                dest_row = zones_df[zones_df[zone_col] == dest_id]
-                                
-                                if origin_row.empty or dest_row.empty:
-                                    results.append({
+
+                                origin_coords = zone_lookup.get(origin_id)
+                                dest_coords   = zone_lookup.get(dest_id)
+
+                                if not origin_coords or not dest_coords:
+                                    planned_rows.append({
                                         'origin_id': origin_id,
                                         'dest_id': dest_id,
                                         'route_type': 'invalid_zone',
@@ -441,92 +541,157 @@ try:
                                         'num_pois_intersected': 0,
                                         'intersected_pois': [],
                                         'total': row['total'],
-                                        'site_zone': current_site_zone
+                                        'site_zone': current_site_zone,
+                                        'key': None,
+                                        'geometry': None
                                     })
                                     continue
-                                
-                                try:
-                                    # Case 1: Both origin and destination are the site zone
-                                    if origin_id == current_site_zone and dest_id == current_site_zone:
-                                        # Route from site zone to site (origin_to_site)
-                                        route1 = get_route(site_zone_lat, site_zone_lon, site_lat, site_lon)
-                                        
-                                        # Route from site to site zone (site_to_destination)
-                                        route2 = get_route(site_lat, site_lon, site_zone_lat, site_zone_lon)
-                                        
-                                        # Process origin_to_site route
-                                        if route1:
-                                            poi_check_result = passes_through(route1, st.session_state.pois)
-                                            results.append({
-                                                'origin_id': origin_id, 
-                                                'dest_id': dest_id,
-                                                'route_type': 'origin_to_site',
-                                                'passes': poi_check_result['passes'], 
-                                                'num_pois_intersected': poi_check_result['num_pois_intersected'],
-                                                'intersected_pois': poi_check_result['intersected_pois'],
-                                                'total': row['total'],
-                                                'site_zone': current_site_zone
-                                            })
-                                        
-                                        # Process site_to_destination route
-                                        if route2:
-                                            poi_check_result = passes_through(route2, st.session_state.pois)
-                                            results.append({
-                                                'origin_id': origin_id, 
-                                                'dest_id': dest_id,
-                                                'route_type': 'site_to_destination',
-                                                'passes': poi_check_result['passes'], 
-                                                'num_pois_intersected': poi_check_result['num_pois_intersected'],
-                                                'intersected_pois': poi_check_result['intersected_pois'],
-                                                'total': row['total'],
-                                                'site_zone': current_site_zone
-                                            })
-                                        continue
-                                    
-                                    # Case 2: Origin is not the site zone (route from origin to site)
-                                    if origin_id != current_site_zone and dest_id == current_site_zone:
-                                        origin_lat = origin_row['Latitude'].values[0]
-                                        origin_lon = origin_row['Longitude'].values[0]
-                                        
-                                        route = get_route(origin_lat, origin_lon, site_lat, site_lon)
-                                        
-                                        if route:
-                                            poi_check_result = passes_through(route, st.session_state.pois)
-                                            results.append({
-                                                'origin_id': origin_id, 
-                                                'dest_id': dest_id,
-                                                'route_type': 'origin_to_site',
-                                                'passes': poi_check_result['passes'], 
-                                                'num_pois_intersected': poi_check_result['num_pois_intersected'],
-                                                'intersected_pois': poi_check_result['intersected_pois'],
-                                                'total': row['total'],
-                                                'site_zone': current_site_zone
-                                            })
-                                    
-                                    # Case 3: Origin is the site zone (route from site to destination)
-                                    if origin_id == current_site_zone and dest_id != current_site_zone:
-                                        dest_lat = dest_row['Latitude'].values[0]
-                                        dest_lon = dest_row['Longitude'].values[0]
-                                        
-                                        route = get_route(site_lat, site_lon, dest_lat, dest_lon)
-                                        
-                                        if route:
-                                            poi_check_result = passes_through(route, st.session_state.pois)
-                                            results.append({
-                                                'origin_id': origin_id, 
-                                                'dest_id': dest_id,
-                                                'route_type': 'site_to_destination',
-                                                'passes': poi_check_result['passes'], 
-                                                'num_pois_intersected': poi_check_result['num_pois_intersected'],
-                                                'intersected_pois': poi_check_result['intersected_pois'],
-                                                'total': row['total'],
-                                                'site_zone': current_site_zone
-                                            })
-                                    
-                                except Exception as e:
-                                    st.error(f"Error processing route {origin_id} to {dest_id}: {str(e)}")
-                                    continue
-                            
+
+                                if origin_id == current_site_zone and dest_id == current_site_zone:
+                                    key1 = f"{current_site_zone}|{idx}|origin_to_site"
+                                    key2 = f"{current_site_zone}|{idx}|site_to_destination"
+                                    route_requests.append({
+                                        'key': key1,
+                                        'origin_lat': szlat,
+                                        'origin_lon': szlon,
+                                        'dest_lat': site_lat,
+                                        'dest_lon': site_lon
+                                    })
+                                    route_requests.append({
+                                        'key': key2,
+                                        'origin_lat': site_lat,
+                                        'origin_lon': site_lon,
+                                        'dest_lat': szlat,
+                                        'dest_lon': szlon
+                                    })
+                                    planned_rows.append({
+                                        'origin_id': origin_id,
+                                        'dest_id': dest_id,
+                                        'route_type': 'origin_to_site',
+                                        'total': row['total'],
+                                        'site_zone': current_site_zone,
+                                        'key': key1,
+                                        'geometry': None
+                                    })
+                                    planned_rows.append({
+                                        'origin_id': origin_id,
+                                        'dest_id': dest_id,
+                                        'route_type': 'site_to_destination',
+                                        'total': row['total'],
+                                        'site_zone': current_site_zone,
+                                        'key': key2,
+                                        'geometry': None
+                                    })
+
+                                elif dest_id == current_site_zone:
+                                    key = f"{current_site_zone}|{idx}|origin_to_site"
+                                    route_requests.append({
+                                        'key': key,
+                                        'origin_lat': origin_coords['Latitude'],
+                                        'origin_lon': origin_coords['Longitude'],
+                                        'dest_lat': site_lat,
+                                        'dest_lon': site_lon
+                                    })
+                                    planned_rows.append({
+                                        'origin_id': origin_id,
+                                        'dest_id': dest_id,
+                                        'route_type': 'origin_to_site',
+                                        'total': row['total'],
+                                        'site_zone': current_site_zone,
+                                        'key': key,
+                                        'geometry': None
+                                    })
+
+                                else:
+                                    key = f"{current_site_zone}|{idx}|site_to_destination"
+                                    route_requests.append({
+                                        'key': key,
+                                        'origin_lat': site_lat,
+                                        'origin_lon': site_lon,
+                                        'dest_lat': dest_coords['Latitude'],
+                                        'dest_lon': dest_coords['Longitude']
+                                    })
+                                    planned_rows.append({
+                                        'origin_id': origin_id,
+                                        'dest_id': dest_id,
+                                        'route_type': 'site_to_destination',
+                                        'total': row['total'],
+                                        'site_zone': current_site_zone,
+                                        'key': key,
+                                        'geometry': None
+                                    })
+
+                        if status_callback:
+                            status_callback(f"Found {len(route_requests)} routes to fetch — starting 10 workers...")
+                        if progress_callback:
+                            progress_callback(10)
+
+                        # --- Phase 2: Fetch all routes in parallel ---
+                        geometries = fetch_routes_parallel(
+                            route_requests,
+                            max_workers=10,
+                            progress_callback=progress_callback,
+                            status_callback=status_callback
+                        )
+
+                        # --- Phase 3: POI intersection checks ---
+                        results = []
+                        total = len(planned_rows)
+
+                        for i, plan in enumerate(planned_rows):
+                            if progress_callback:
+                                progress_callback(80 + int(20 * i / total))
+                            if status_callback:
+                                status_callback(f"Checking POI intersections... {i+1} of {total}")
+
+                            if plan.get('route_type') == 'invalid_zone' or plan['key'] is None:
+                                results.append({
+                                    'origin_id': plan['origin_id'],
+                                    'dest_id': plan['dest_id'],
+                                    'route_type': 'invalid_zone',
+                                    'passes': False,
+                                    'num_pois_intersected': 0,
+                                    'intersected_pois': [],
+                                    'total': plan['total'],
+                                    'site_zone': plan['site_zone'],
+                                    'geometry': None
+                                })
+                                continue
+
+                            geometry = geometries.get(plan['key'])
+                            if geometry:
+                                poi_result = passes_through(geometry, st.session_state.pois)
+                                results.append({
+                                    'origin_id': plan['origin_id'],
+                                    'dest_id': plan['dest_id'],
+                                    'route_type': plan['route_type'],
+                                    'passes': poi_result['passes'],
+                                    'num_pois_intersected': poi_result['num_pois_intersected'],
+                                    'intersected_pois': poi_result['intersected_pois'],
+                                    'total': plan['total'],
+                                    'site_zone': plan['site_zone'],
+                                    'geometry': geometry
+                                })
+                            else:
+                                results.append({
+                                    'origin_id': plan['origin_id'],
+                                    'dest_id': plan['dest_id'],
+                                    'route_type': plan['route_type'],
+                                    'passes': False,
+                                    'num_pois_intersected': 0,
+                                    'intersected_pois': [],
+                                    'total': plan['total'],
+                                    'site_zone': plan['site_zone'],
+                                    'geometry': None
+                                })
+
+                        if status_callback:
+                            status_callback("Processing complete!")
+                        if progress_callback:
+                            progress_callback(100)
+
+                        st.session_state.zone_lookup = zone_lookup
+
                         return pd.DataFrame(results)
 
                     def update_progress(progress):
@@ -580,14 +745,21 @@ try:
                                 total_traffic = origin_summary.sum()
                                 # Calculate percentages
                                 origin_percentages = (origin_summary / total_traffic * 100).round(1)
+
+                                poi_names_in_order = origin_summary.index.tolist()
+                                
                                 
                                 # Create interactive pie chart
                                 fig1 = px.pie(
                                     values=origin_percentages.values,
                                     names=origin_percentages.index,
-                                    custom_data=[origin_summary.values],  # For formatting
-                                    title="Origin to Site"
+                                    custom_data=[origin_summary.values],
+                                    title="Origin to Site",
+                                    color=origin_percentages.index,
+                                    color_discrete_map={name: FOLIUM_TO_CSS.get(poi_colour_map.get(name, 'gray'), '#808080') 
+                                                        for name in origin_percentages.index}
                                 )
+                                
                                 fig1.update_traces(
                                     textposition='inside',
                                     hovertemplate="<b>%{label}</b><br>" +
@@ -608,14 +780,20 @@ try:
                                 total_traffic = dest_summary.sum()
                                 # Calculate percentages
                                 dest_percentages = (dest_summary / total_traffic * 100).round(1)
-                                
+
+                                poi_names_in_order = dest_summary.index.tolist()
+                                                                
                                 # Create interactive pie chart
                                 fig2 = px.pie(
                                     values=dest_percentages.values,
                                     names=dest_percentages.index,
-                                    custom_data=[dest_summary.values],  # For formatting
-                                    title="Site to Destination"
+                                    custom_data=[dest_summary.values],
+                                    title="Site to Destination",
+                                    color=dest_percentages.index,
+                                    color_discrete_map={name: FOLIUM_TO_CSS.get(poi_colour_map.get(name, 'gray'), '#808080') 
+                                                        for name in dest_percentages.index}
                                 )
+                                
                                 fig2.update_traces(
                                     textposition='inside',
                                     hovertemplate="<b>%{label}</b><br>" +
@@ -643,37 +821,33 @@ try:
 
                                 # Create POI Summary DataFrame
                                 poi_summary_df = pd.DataFrame([{
-                                    'POI Name': poi['name'],
                                     'POI_ID': poi['id'],
-                                    'Latitude': poi['coordinates'][0],
-                                    'Longitude': poi['coordinates'][1],
+                                    'POI Name': poi['name'],
+                                    'Coordinates': f"{poi['coordinates'][0]}, {poi['coordinates'][1]}",
                                     'Threshold (km)': poi['threshold']
                                 } for poi in st.session_state.pois])
 
                                 # Create Site Summary DataFrame
-                                
                                 site_summary_df = pd.DataFrame([{
                                     f'Site {zone_col} Zone': zone,
-                                    'Zone Latitude': zones_df[zones_df[zone_col] == zone]['Latitude'].values[0],
-                                    'Zone Longitude': zones_df[zones_df[zone_col] == zone]['Longitude'].values[0]
+                                    'Zone Coordinates': f"{zones_df[zones_df[zone_col] == zone]['Latitude'].values[0]}, {zones_df[zones_df[zone_col] == zone]['Longitude'].values[0]}"
                                 } for zone in site_zones])
 
                                 site_location_summary_df = pd.DataFrame([{
-                                    f'Site Latitude': site_lat,
-                                    'Site Longitude': site_lon
+                                    'Site Coordinates': f"{site_lat}, {site_lon}"
                                 }])
 
-                                # Write sheets and apply formatting
+                                # Write sheets
                                 poi_summary_df.to_excel(writer, sheet_name='Location Details', startrow=0, startcol=0, index=False)
                                 site_summary_df.to_excel(writer, sheet_name='Location Details', startrow=0, startcol=poi_summary_df.shape[1] + 2, index=False)
-                                site_location_summary_df.to_excel(writer, sheet_name='Location Details', startrow=0, startcol=poi_summary_df.shape[1] + 6, index=False)
-                                
+                                site_location_summary_df.to_excel(writer, sheet_name='Location Details', startrow=0, startcol=poi_summary_df.shape[1] + site_summary_df.shape[1] + 3, index=False)
+
                                 # Apply Excel formatting
                                 workbook = writer.book
                                 for sheet_name in ['Route Results', 'Location Details']:
                                     sheet = writer.sheets[sheet_name]
                                     if sheet_name == 'Location Details':
-                                        apply_header_formatting(sheet, exclude_columns=[6,7,11])
+                                        apply_header_formatting(sheet)
                                     else:
                                         apply_header_formatting(sheet)
                                     autofit_columns(sheet)
@@ -682,7 +856,7 @@ try:
                                 calc_sheet = create_poi_analysis_sheet(workbook, st.session_state.pois)
                                 format_poi_analysis_sheet(calc_sheet, len(st.session_state.pois))
 
-                                # Create Raw Text sheet if content available
+                                # Create Raw Text sheet
                                 create_raw_text_sheet(workbook, content)
 
                             return output.getvalue()
@@ -854,144 +1028,250 @@ try:
 
                         if st.session_state.results_df is not None and not st.session_state.results_df.empty:
                             # Add a toggle button above the map
-                            show_route_map = st.toggle('Show Route Map', value=True)
-                            if show_route_map:
-                                with st.spinner("Generating map..."):
+                            zone_lookup = st.session_state.get('zone_lookup', {})
+                                # Only rebuild if results have changed
+                            if 'route_map_html' not in st.session_state or \
+                                st.session_state.get('route_map_results_id') != id(st.session_state.results_df):
                                     
-                                    route_map = folium.Map(location=[site_lat, site_lon], zoom_start=10)
-                                    
-                                    
-                                    # Create feature groups
-                                    site_layer = folium.FeatureGroup(name="Site Location", show=True)
-                                    origin_routes = folium.FeatureGroup(name="Origin to Site Routes", show=True)
-                                    dest_routes = folium.FeatureGroup(name="Site to Destination Routes", show=True)
-                                    poi_layer = folium.FeatureGroup(name="Points of Interest", show=True)
-                                    
-                                    # Add site marker
-                                    folium.Marker(
-                                        location=[site_lat, site_lon],
-                                        popup=folium.Popup("Site Location",max_width=200),
-                                        icon=folium.Icon(color='black', icon='home')
-                                    ).add_to(site_layer)
-                                    
-                                    # Add routes
-                                    for _, row in st.session_state.results_df.iterrows():
-                                        if row['passes']:
-                                            origin_id = row['origin_id']
-                                            dest_id = row['dest_id']
-                                            route_type = row['route_type']
-                                            
-                                            if route_type == 'origin_to_site':
-                                                origin_row = zones_df[zones_df[zone_col] == origin_id].iloc[0]
-                                                route = get_route(origin_row['Latitude'], origin_row['Longitude'], site_lat, site_lon)
-                                                if route:
-                                                    coords = decode(route)
-                                                    folium.PolyLine(coords, weight=2, color='blue', opacity=0.8,
-                                                        popup=folium.Popup(f"Origin Zone: {origin_id}<br> Traffic: {row['total']}",max_width=200)
-                                                    ).add_to(origin_routes)
-                                                    
-                                            elif route_type == 'site_to_destination':
-                                                dest_row = zones_df[zones_df[zone_col] == dest_id].iloc[0]
-                                                route = get_route(site_lat, site_lon, dest_row['Latitude'], dest_row['Longitude'])
-                                                if route:
-                                                    coords = decode(route)
-                                                    folium.PolyLine(coords, weight=2, color='red', opacity=0.8,
-                                                        popup=folium.Popup(f"Destination Zone: {dest_id}<br> Traffic: {row['total']}",max_width=200)
-                                                    ).add_to(dest_routes)
-                                    
-                                    # Add POI markers
-                                    for poi in st.session_state.pois:
-                                        folium.CircleMarker(
-                                            location=poi['coordinates'],
-                                            radius=5,
-                                            popup=f"POI ID: {poi['id']}<br>Name: {poi['name']}<br>Threshold: {poi['threshold']} km",
-                                            color='orange',
-                                            fill=True,
-                                            fillColor='orange',
-                                            fillOpacity=0.7
-                                        ).add_to(poi_layer)
+                                    with st.spinner("Generating map..."):
 
-                                        # Add proximity circle for POIs with individual thresholds
-                                        folium.Circle(
-                                            location=poi['coordinates'],
-                                            radius=poi['threshold'] * 1000,  # Convert km to meters
-                                            color='orange',
-                                            fill=True,
-                                            fillOpacity=0.2,
-                                            popup=f"{poi['name']}<br>Threshold: {poi['threshold']} km",
-                                        ).add_to(poi_layer)
 
-                                    # Add zone nodes layer
-                                    origin_nodes = folium.FeatureGroup(name="Origin Zone Locations", show=True)
-                                    dest_nodes = folium.FeatureGroup(name="Destination Zone Locations", show=True)
+                                        # Calculate max traffic for scaling route thickness
+                                        max_traffic = st.session_state.results_df[
+                                            st.session_state.results_df['passes']
+                                        ]['total'].max() or 1
 
-                                    # Add zone markers with enhanced popups
-                                    for _, row in st.session_state.results_df.iterrows():
-                                        if row['passes']:
-                                            # Get POI names and total trips
-                                            poi = row['intersected_pois'][0]['name']
-                                            total_trips = row['total']
-                                            
+                                        def get_route_weight(total, max_traffic, min_weight=1, max_weight=8):
+                                            """Scale route thickness between min and max weight based on traffic volume"""
+                                            return min_weight + (max_weight - min_weight) * (total / max_traffic)
+
+                                        route_map = folium.Map(location=[site_lat, site_lon], zoom_start=10,tiles="CartoDB Voyager")
+
+                                        # Create feature groups
+                                        site_layer = folium.FeatureGroup(name="Site Location", show=True)
+                                        poi_layer = folium.FeatureGroup(name="Points of Interest", show=True)
+                                        origin_nodes = folium.FeatureGroup(name="Origin Zone Locations", show=True)
+                                        dest_nodes = folium.FeatureGroup(name="Destination Zone Locations", show=True)
+
+                                        # Create one feature group per POI for origin and destination routes
+                                        # so users can toggle each POI's routes independently
+                                        origin_route_groups = {
+                                            poi['name']: folium.FeatureGroup(
+                                                name=f"Origin → Site via {poi['name']}", 
+                                                show=True
+                                            ) 
+                                            for poi in st.session_state.pois
+                                        }
+                                        dest_route_groups = {
+                                            poi['name']: folium.FeatureGroup(
+                                                name=f"Site → Dest via {poi['name']}", 
+                                                show=True
+                                            ) 
+                                            for poi in st.session_state.pois
+                                        }
+
+                                        # Use MarkerCluster for zone nodes to avoid clutter
+                                        origin_cluster = folium.FeatureGroup(name="Origin Zone Locations", show=True)
+                                        dest_cluster = folium.FeatureGroup(name="Destination Zone Locations", show=True)
+
+                                        # Add site marker
+                                        folium.Marker(
+                                            location=[site_lat, site_lon],
+                                            popup=folium.Popup("Site Location", max_width=200),
+                                            icon=folium.Icon(color='black', icon='home')
+                                        ).add_to(site_layer)
+
+                                        # Track traffic totals per POI for the legend
+                                        poi_traffic_in  = {poi['name']: 0 for poi in st.session_state.pois}
+                                        poi_traffic_out = {poi['name']: 0 for poi in st.session_state.pois}
+
+                                        # Add routes from stored geometry
+                                        for _, row in st.session_state.results_df.iterrows():
+                                            if not row['passes'] or row['geometry'] is None:
+                                                continue
+
+                                            coords = decode(row['geometry'])
+                                            weight = get_route_weight(row['total'], max_traffic)
+
+                                            # Get the first matched POI name to determine colour and group
+                                            poi_name = row['intersected_pois'][0]['name'] if row['intersected_pois'] else None
+                                            if not poi_name:
+                                                continue
+
+                                            colour = poi_colour_map.get(poi_name, 'gray')
+
+                                            if row['route_type'] == 'origin_to_site':
+                                                poi_traffic_in[poi_name] = poi_traffic_in.get(poi_name, 0) + row['total']
+                                                folium.PolyLine(
+                                                    coords,
+                                                    weight=weight,
+                                                    color=colour,
+                                                    opacity=0.7,
+                                                    popup=folium.Popup(
+                                                        f"<b>Origin Zone:</b> {row['origin_id']}<br>"
+                                                        f"<b>POI:</b> {poi_name}<br>"
+                                                        f"<b>Traffic:</b> {row['total']}",
+                                                        max_width=200
+                                                    )
+                                                ).add_to(origin_route_groups[poi_name])
+
+                                            elif row['route_type'] == 'site_to_destination':
+                                                poi_traffic_out[poi_name] = poi_traffic_out.get(poi_name, 0) + row['total']
+                                                folium.PolyLine(
+                                                    coords,
+                                                    weight=weight,
+                                                    color=colour,
+                                                    opacity=0.7,
+                                                    popup=folium.Popup(
+                                                        f"<b>Destination Zone:</b> {row['dest_id']}<br>"
+                                                        f"<b>POI:</b> {poi_name}<br>"
+                                                        f"<b>Traffic:</b> {row['total']}",
+                                                        max_width=200
+                                                    )
+                                                ).add_to(dest_route_groups[poi_name])
+
+                                        # Add POI markers and threshold circles
+                                        for poi in st.session_state.pois:
+                                            colour = poi_colour_map[poi['name']]
+                                            folium.CircleMarker(
+                                                location=poi['coordinates'],
+                                                radius=8,
+                                                popup=folium.Popup(
+                                                    f"<b>{poi['name']}</b><br>"
+                                                    f"Threshold: {poi['threshold']} km<br>"
+                                                    f"Traffic In: {poi_traffic_in.get(poi['name'], 0)}<br>"
+                                                    f"Traffic Out: {poi_traffic_out.get(poi['name'], 0)}",
+                                                    max_width=200
+                                                ),
+                                                color=colour,
+                                                fill=True,
+                                                fillColor=colour,
+                                                fillOpacity=0.9
+                                            ).add_to(poi_layer)
+
+                                            folium.Circle(
+                                                location=poi['coordinates'],
+                                                radius=poi['threshold'] * 1000,
+                                                color=colour,
+                                                fill=True,
+                                                fillOpacity=0.15,
+                                                popup=f"{poi['name']}<br>Threshold: {poi['threshold']} km",
+                                            ).add_to(poi_layer)
+
+                                        # Add zone node markers to clusters
+                                        for _, row in st.session_state.results_df.iterrows():
+                                            if not row['passes']:
+                                                continue
+
+                                            poi_name = row['intersected_pois'][0]['name'] if row['intersected_pois'] else 'Unknown'
+                                            colour = poi_colour_map.get(poi_name, 'gray')
+
                                             if row['route_type'] == 'origin_to_site':
                                                 zone_id = row['origin_id']
-                                                zone_row = zones_df[zones_df[zone_col] == zone_id].iloc[0]
-                                                popup_text = (f"Origin Zone: {zone_id}<br>"
-                                                                f"POI: {poi}<br>"
-                                                                f"Total Trips: {total_trips}")
-                                                
-                                                folium.Marker(
-                                                    location=[zone_row['Latitude'], zone_row['Longitude']],
-                                                    popup=folium.Popup(popup_text, max_width=200),
-                                                    icon=folium.Icon(color='cadetblue', icon ='car',prefix='fa')
-                                                ).add_to(origin_nodes)
-                                                
-                                            else:  # site_to_destination
+                                                zone_row = zone_lookup.get(zone_id)
+                                                if zone_row:
+                                                    folium.Marker(
+                                                        location=[zone_row['Latitude'], zone_row['Longitude']],
+                                                        popup=folium.Popup(
+                                                            f"<b>Origin Zone:</b> {zone_id}<br>"
+                                                            f"<b>POI:</b> {poi_name}<br>"
+                                                            f"<b>Total Trips:</b> {row['total']}",
+                                                            max_width=200
+                                                        ),
+                                                        icon=folium.Icon(color=colour, icon='car', prefix='fa')
+                                                    ).add_to(origin_cluster)
+
+                                            else:
                                                 zone_id = row['dest_id']
-                                                zone_row = zones_df[zones_df[zone_col] == zone_id].iloc[0]
-                                                popup_text = (f"Destination Zone: {zone_id}<br>"
-                                                                f"POI: {poi}<br>"
-                                                                f"Total Trips: {total_trips}")
-                                                
-                                                folium.Marker(
-                                                    location=[zone_row['Latitude'], zone_row['Longitude']],
-                                                    popup=folium.Popup(popup_text, max_width=200),
-                                                    icon=folium.Icon(color='darkred', icon ='car-side',prefix='fa')
-                                                ).add_to(dest_nodes)    
+                                                zone_row = zone_lookup.get(zone_id)
+                                                if zone_row:
+                                                    folium.Marker(
+                                                        location=[zone_row['Latitude'], zone_row['Longitude']],
+                                                        popup=folium.Popup(
+                                                            f"<b>Destination Zone:</b> {zone_id}<br>"
+                                                            f"<b>POI:</b> {poi_name}<br>"
+                                                            f"<b>Total Trips:</b> {row['total']}",
+                                                            max_width=200
+                                                        ),
+                                                        icon=folium.Icon(color=colour, icon='car-side', prefix='fa')
+                                                    ).add_to(dest_cluster)
 
-                                                 
-                                    
-                                    # Add all layers to map
-                                    site_layer.add_to(route_map)
-                                    origin_routes.add_to(route_map)
-                                    dest_routes.add_to(route_map)
-                                    poi_layer.add_to(route_map)
-                                    origin_nodes.add_to(route_map)
-                                    dest_nodes.add_to(route_map)
+                                        # Build legend HTML
+                                        legend_html = """
+                                        <div style="position: fixed; bottom: 40px; left: 40px; z-index: 1000;
+                                                    background-color: white; padding: 12px 16px; border-radius: 8px;
+                                                    border: 1px solid #ccc; font-family: Arial; font-size: 12px;
+                                                    box-shadow: 2px 2px 6px rgba(0,0,0,0.2); min-width: 200px;">
+                                            <b style="font-size:13px;">POI Traffic Summary</b><br><br>
+                                        """
+                                        for poi in st.session_state.pois:
+                                            colour = poi_colour_map[poi['name']]
+                                            traffic_in  = poi_traffic_in.get(poi['name'], 0)
+                                            traffic_out = poi_traffic_out.get(poi['name'], 0)
+                                            total_in    = sum(poi_traffic_in.values()) or 1
+                                            total_out   = sum(poi_traffic_out.values()) or 1
+                                            pct_in      = round(traffic_in / total_in * 100, 1)
+                                            pct_out     = round(traffic_out / total_out * 100, 1)
+                                            legend_html += f"""
+                                            <div style="margin-bottom:6px;">
+                                                <span style="display:inline-block; width:14px; height:14px; 
+                                                            background:{colour}; border-radius:50%; 
+                                                            margin-right:6px; vertical-align:middle;"></span>
+                                                <b>{poi['name']}</b><br>
+                                                <span style="margin-left:20px;">In: {traffic_in} ({pct_in}%)</span><br>
+                                                <span style="margin-left:20px;">Out: {traffic_out} ({pct_out}%)</span>
+                                            </div>
+                                            """
+                                        legend_html += "</div>"
 
-                                    # origin_search = Search(
-                                    #     layer=origin_nodes,
-                                    #     geom_type="Point",
-                                    #     placeholder="Search for an origin zone",
-                                    #     collapsed=False,
-                                    #     search_label="zone_id",
-                                    #     weight=3,
-                                    # ).add_to(route_map)    
-                                    
-                                    # Add layer control
-                                    folium.LayerControl(collapsed=False).add_to(route_map)
+                                        route_map.get_root().html.add_child(folium.Element(legend_html))
 
-                                    html = route_map.get_root().render()
+                                        # Add route weight legend
+                                        weight_legend_html = """
+                                        <div style="position: fixed; bottom: 40px; right: 40px; z-index: 1000;
+                                                    background-color: white; padding: 12px 16px; border-radius: 8px;
+                                                    border: 1px solid #ccc; font-family: Arial; font-size: 12px;
+                                                    box-shadow: 2px 2px 6px rgba(0,0,0,0.2);">
+                                            <b style="font-size:13px;">Route Thickness</b><br><br>
+                                            <svg width="120" height="60">
+                                                <line x1="0" y1="12" x2="120" y2="12" stroke="#555" stroke-width="1"/>
+                                                <text x="0" y="26" font-size="10">Low traffic</text>
+                                                <line x1="0" y1="44" x2="120" y2="44" stroke="#555" stroke-width="8"/>
+                                                <text x="0" y="58" font-size="10">High traffic</text>
+                                            </svg>
+                                        </div>
+                                        """
+                                        route_map.get_root().html.add_child(folium.Element(weight_legend_html))
 
-                                    # Add download button AFTER map is fully configured
-                                    ste.download_button(
-                                        label="Download Route Map",
-                                        data=html,
-                                        file_name="Route_map.html",
-                                        mime="text/html"
-                                    )
-                                    
-                                    st.subheader("Route Map")
-                                    st_folium(route_map, height=600, width=None,returned_objects=[])
+                                        # Add all layers to map
+                                        site_layer.add_to(route_map)
+                                        poi_layer.add_to(route_map)
+                                        for group in origin_route_groups.values():
+                                            group.add_to(route_map)
+                                        for group in dest_route_groups.values():
+                                            group.add_to(route_map)
+                                        origin_cluster.add_to(route_map)
+                                        dest_cluster.add_to(route_map)
+                                        folium.LayerControl(collapsed=False).add_to(route_map)
+
+                                        # Cache the rendered HTML
+                                        st.session_state.route_map_html = route_map.get_root().render()
+                                        st.session_state.route_map_results_id = id(st.session_state.results_df)
+
+                                        # Cache the rendered HTML and a download copy
+                                        st.session_state.route_map_html = route_map.get_root().render()
+                                        st.session_state.route_map_results_id = id(st.session_state.results_df)
+
+                            # Download button uses cached HTML
+                            ste.download_button(
+                                label="Download Route Map",
+                                data=st.session_state.route_map_html,
+                                file_name="Route_map.html",
+                                mime="text/html"
+                                )
+
+                            st.subheader("Route Map")
+                            components.html(st.session_state.route_map_html, height=600)
 
                 except Exception as e:
                     status_text.text(f"Error during processing: {str(e)}")
