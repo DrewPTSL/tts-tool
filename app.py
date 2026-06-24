@@ -426,14 +426,14 @@ with st.expander("🌐 Or fetch directly from the TTS Portal"):
     else:
         time_period_options = ["AM Peak", "PM Peak", "All Day", "Other"]
         time_choice = st.pills(
-            "Select Time Period(s):",
+            "Select Time Period:",
             time_period_options,
             selection_mode="single",
             key="fetch_time_periods"
         )
 
         custom_time = None
-        if time_choice and "Other" in time_choice:
+        if time_choice == "Other" in time_choice:
             custom_time = st.text_input(
                 "Enter custom time range(s)",
                 value="",
@@ -445,12 +445,12 @@ with st.expander("🌐 Or fetch directly from the TTS Portal"):
 
         if st.button("Fetch TTS Data", key="fetch_tts_button"):
             if not time_choice:
-                st.error("Please select at least one time period.")
+                st.error("Please select a time period.")
             else:
                 with st.spinner("Fetching data from TTS portal..."):
                     fetched_content = run_webscraper(
                         site_zones=site_zones,
-                        time_periods=time_choice,
+                        time_periods=[time_choice],
                         data_choice=data_choice,
                         custom_time=custom_time,
                         headless=True
