@@ -101,10 +101,17 @@ def run_webscraper(site_zones, time_periods, data_choice, custom_time=None, head
     driver = None
 
     try:
-        driver = webdriver.Chrome(
-            service=Service("/usr/bin/chromedriver"),
-            options=chrome_options
-        )
+        # Use the system chromedriver if it's present (e.g. in a deployed
+        # Linux container); otherwise fall back to Selenium Manager, which
+        # auto-resolves the right driver for local testing on any OS.
+        chromedriver_path = "/usr/bin/chromedriver"
+        if os.path.exists(chromedriver_path):
+            driver = webdriver.Chrome(
+                service=Service(chromedriver_path),
+                options=chrome_options
+            )
+        else:
+            driver = webdriver.Chrome(options=chrome_options)
 
         # Login process
         update_status("Logging into TTS system...")
@@ -411,82 +418,6 @@ if site_lon and data_choice:
                 st.info("Zone already added.")
 
 
-# ---------------------------------------------------------------------------
-# TTS Data Source Section: upload a file OR fetch directly from the portal
-# ---------------------------------------------------------------------------
-st.markdown("### TTS Data Source")
-
-uploaded_file = st.file_uploader("Upload your TTS file", type=['txt'])
-
-with st.expander("🌐 Or fetch directly from the TTS Portal"):
-    if not data_choice:
-        st.info("Select a data year above to enable fetching.")
-    elif not site_zones:
-        st.info("Select at least one Site Zone above to enable fetching.")
-    else:
-        time_period_options = ["AM Peak", "PM Peak", "All Day", "Other"]
-        time_choice = st.pills(
-            "Select Time Period:",
-            time_period_options,
-            selection_mode="single",
-            key="fetch_time_periods"
-        )
-
-        custom_time = None
-        if time_choice == "Other" in time_choice:
-            custom_time = st.text_input(
-                "Enter custom time range(s)",
-                value="",
-                help="e.g. 1200-1400 for 12 p.m. to 2 p.m. (separate multiple ranges with commas)",
-                key="fetch_custom_time"
-            )
-
-        #headless = st.checkbox("Run browser headless", value=True, key="fetch_headless")
-
-        if st.button("Fetch TTS Data", key="fetch_tts_button"):
-            if not time_choice:
-                st.error("Please select a time period.")
-            else:
-                with st.spinner("Fetching data from TTS portal..."):
-                    fetched_content = run_webscraper(
-                        site_zones=site_zones,
-                        time_periods=[time_choice],
-                        data_choice=data_choice,
-                        custom_time=custom_time,
-                        headless=True
-                    )
-                if fetched_content:
-                    st.session_state["fetched_tts_content"] = fetched_content
-                    # A new uploaded file should always win if the user
-                    # changes their mind later, so clear any stale results.
-                    st.session_state.processing_started = False
-                    st.session_state.results_df = None
-                    st.success("TTS data fetched successfully — ready for analysis below.")
-                    st.rerun()
-
-    if st.session_state.get("fetched_tts_content"):
-        st.success("✅ Fetched TTS data is loaded and will be used for analysis.")
-        if st.button("Clear fetched data", key="clear_fetched_data"):
-            st.session_state["fetched_tts_content"] = None
-            st.rerun()
-
-
-def get_tts_content():
-    """
-    Returns the raw TTS text content to process, preferring freshly
-    uploaded files over previously fetched portal data, and the fetched
-    data when no file has been uploaded.
-    """
-    if uploaded_file is not None:
-        return uploaded_file.getvalue().decode()
-    if st.session_state.get("fetched_tts_content"):
-        return st.session_state["fetched_tts_content"]
-    return None
-
-
-has_tts_content = get_tts_content() is not None
-
-
 # POI Management Section
 st.markdown("### Points of Interest")
 
@@ -695,6 +626,83 @@ if valid_coords:
         
     except Exception as e:
         st.error(f"Error creating map: {str(e)}")
+
+# ---------------------------------------------------------------------------
+# TTS Data Source Section: upload a file OR fetch directly from the portal
+# ---------------------------------------------------------------------------
+st.markdown("### TTS Data Source")
+
+uploaded_file = st.file_uploader("Upload your TTS file", type=['txt'])
+
+with st.expander("🌐 Or fetch directly from the TTS Portal"):
+    if not data_choice:
+        st.info("Select a data year above to enable fetching.")
+    elif not site_zones:
+        st.info("Select at least one Site Zone above to enable fetching.")
+    else:
+        time_period_options = ["AM Peak", "PM Peak", "All Day", "Other"]
+        time_choice = st.pills(
+            "Select Time Period:",
+            time_period_options,
+            selection_mode="single",
+            key="fetch_time_periods"
+        )
+
+        custom_time = None
+        if time_choice == "Other":
+            custom_time = st.text_input(
+                "Enter custom time range(s)",
+                value="",
+                help="e.g. 1200-1400 for 12 p.m. to 2 p.m. (separate multiple ranges with commas)",
+                key="fetch_custom_time"
+            )
+
+        headless = st.checkbox("Run browser headless", value=True, key="fetch_headless")
+
+        if st.button("Fetch TTS Data", key="fetch_tts_button"):
+            if not time_choice:
+                st.error("Please select a time period.")
+            else:
+                # run_webscraper expects a list of periods, so wrap the
+                # single selection from st.pills(selection_mode="single").
+                with st.spinner("Fetching data from TTS portal..."):
+                    fetched_content = run_webscraper(
+                        site_zones=site_zones,
+                        time_periods=[time_choice],
+                        data_choice=data_choice,
+                        custom_time=custom_time,
+                        headless=headless
+                    )
+                if fetched_content:
+                    st.session_state["fetched_tts_content"] = fetched_content
+                    # A new uploaded file should always win if the user
+                    # changes their mind later, so clear any stale results.
+                    st.session_state.processing_started = False
+                    st.session_state.results_df = None
+                    st.success("TTS data fetched successfully — ready for analysis below.")
+                    st.rerun()
+
+    if st.session_state.get("fetched_tts_content"):
+        st.success("✅ Fetched TTS data is loaded and will be used for analysis.")
+        if st.button("Clear fetched data", key="clear_fetched_data"):
+            st.session_state["fetched_tts_content"] = None
+            st.rerun()
+
+
+def get_tts_content():
+    """
+    Returns the raw TTS text content to process, preferring freshly
+    uploaded files over previously fetched portal data, and the fetched
+    data when no file has been uploaded.
+    """
+    if uploaded_file is not None:
+        return uploaded_file.getvalue().decode()
+    if st.session_state.get("fetched_tts_content"):
+        return st.session_state["fetched_tts_content"]
+    return None
+
+
+has_tts_content = get_tts_content() is not None
 
 ## Main Processing Section
 try:
