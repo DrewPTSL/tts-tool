@@ -1162,7 +1162,7 @@ try:
                                 for sheet_name in ['Route Results', 'Location Details']:
                                     sheet = writer.sheets[sheet_name]
                                     if sheet_name == 'Location Details':
-                                        apply_header_formatting(sheet)
+                                        apply_header_formatting(sheet, exclude_columns=[5,6,9])
                                     else:
                                         apply_header_formatting(sheet)
                                     autofit_columns(sheet)
