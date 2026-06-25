@@ -657,8 +657,6 @@ with st.expander("🌐 Or fetch directly from the TTS Portal"):
                 key="fetch_custom_time"
             )
 
-        headless = st.checkbox("Run browser headless", value=True, key="fetch_headless")
-
         if st.button("Fetch TTS Data", key="fetch_tts_button"):
             if not time_choice:
                 st.error("Please select a time period.")
@@ -671,7 +669,7 @@ with st.expander("🌐 Or fetch directly from the TTS Portal"):
                         time_periods=[time_choice],
                         data_choice=data_choice,
                         custom_time=custom_time,
-                        headless=headless
+                        headless=True
                     )
                 if fetched_content:
                     st.session_state["fetched_tts_content"] = fetched_content
