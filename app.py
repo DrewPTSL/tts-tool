@@ -1348,7 +1348,6 @@ try:
                                     
                                     with st.spinner("Generating map..."):
 
-
                                         # Calculate max traffic for scaling route thickness
                                         max_traffic = st.session_state.results_df[
                                             st.session_state.results_df['passes']
@@ -1358,34 +1357,29 @@ try:
                                             """Scale route thickness between min and max weight based on traffic volume"""
                                             return min_weight + (max_weight - min_weight) * (total / max_traffic)
 
-                                        route_map = folium.Map(location=[site_lat, site_lon], zoom_start=10,tiles="CartoDB Voyager")
+                                        route_map = folium.Map(location=[site_lat, site_lon], zoom_start=10, tiles="CartoDB Voyager")
 
                                         # Create feature groups
                                         site_layer = folium.FeatureGroup(name="Site Location", show=True)
                                         poi_layer = folium.FeatureGroup(name="Points of Interest", show=True)
-                                        origin_nodes = folium.FeatureGroup(name="Origin Zone Locations", show=True)
-                                        dest_nodes = folium.FeatureGroup(name="Destination Zone Locations", show=True)
 
-                                        # Create one feature group per POI for origin and destination routes
-                                        # so users can toggle each POI's routes independently
+                                        # One feature group per POI per direction — holds BOTH the
+                                        # route polylines AND the zone markers for that POI/direction,
+                                        # so a single toggle controls both together.
                                         origin_route_groups = {
                                             poi['name']: folium.FeatureGroup(
-                                                name=f"Origin → Site via {poi['name']}", 
+                                                name=f"Origin → Site via {poi['name']}",
                                                 show=True
-                                            ) 
+                                            )
                                             for poi in st.session_state.pois
                                         }
                                         dest_route_groups = {
                                             poi['name']: folium.FeatureGroup(
-                                                name=f"Site → Dest via {poi['name']}", 
+                                                name=f"Site → Dest via {poi['name']}",
                                                 show=True
-                                            ) 
+                                            )
                                             for poi in st.session_state.pois
                                         }
-
-                                        # Use MarkerCluster for zone nodes to avoid clutter
-                                        origin_cluster = folium.FeatureGroup(name="Origin Zone Locations", show=True)
-                                        dest_cluster = folium.FeatureGroup(name="Destination Zone Locations", show=True)
 
                                         # Add site marker
                                         folium.Marker(
@@ -1471,12 +1465,15 @@ try:
                                                 popup=f"{poi['name']}<br>Threshold: {poi['threshold']} km",
                                             ).add_to(poi_layer)
 
-                                        # Add zone node markers to clusters
+                                        # Add zone node markers — into the SAME per-POI/direction
+                                        # group as the route lines, so one toggle controls both.
                                         for _, row in st.session_state.results_df.iterrows():
                                             if not row['passes']:
                                                 continue
 
-                                            poi_name = row['intersected_pois'][0]['name'] if row['intersected_pois'] else 'Unknown'
+                                            poi_name = row['intersected_pois'][0]['name'] if row['intersected_pois'] else None
+                                            if not poi_name or poi_name not in origin_route_groups:
+                                                continue
                                             colour = poi_colour_map.get(poi_name, 'gray')
 
                                             if row['route_type'] == 'origin_to_site':
@@ -1492,7 +1489,7 @@ try:
                                                             max_width=200
                                                         ),
                                                         icon=folium.Icon(color=colour, icon='car', prefix='fa')
-                                                    ).add_to(origin_cluster)
+                                                    ).add_to(origin_route_groups[poi_name])
 
                                             else:
                                                 zone_id = row['dest_id']
@@ -1507,7 +1504,7 @@ try:
                                                             max_width=200
                                                         ),
                                                         icon=folium.Icon(color=colour, icon='car-side', prefix='fa')
-                                                    ).add_to(dest_cluster)
+                                                    ).add_to(dest_route_groups[poi_name])
 
                                         # Build legend HTML
                                         legend_html = """
@@ -1563,15 +1560,9 @@ try:
                                             group.add_to(route_map)
                                         for group in dest_route_groups.values():
                                             group.add_to(route_map)
-                                        origin_cluster.add_to(route_map)
-                                        dest_cluster.add_to(route_map)
                                         folium.LayerControl(collapsed=False).add_to(route_map)
 
                                         # Cache the rendered HTML
-                                        st.session_state.route_map_html = route_map.get_root().render()
-                                        st.session_state.route_map_results_id = id(st.session_state.results_df)
-
-                                        # Cache the rendered HTML and a download copy
                                         st.session_state.route_map_html = route_map.get_root().render()
                                         st.session_state.route_map_results_id = id(st.session_state.results_df)
 
