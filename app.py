@@ -121,12 +121,14 @@ def run_webscraper(site_zones, time_periods, data_choice, custom_time=None, head
         import subprocess
         chromium_version = subprocess.run([chromium_path, "--version"], capture_output=True, text=True)
         chromedriver_version = subprocess.run([chromedriver_path, "--version"], capture_output=True, text=True)
-        st.write(f"chromium version: {chromium_version.stdout.strip()} {chromium_version.stderr.strip()}")
-        st.write(f"chromedriver version: {chromedriver_version.stdout.strip()} {chromedriver_version.stderr.strip()}")
-        import subprocess
-        ldd_result = subprocess.run(["ldd", chromium_path], capture_output=True, text=True)
-        missing_libs = [line for line in ldd_result.stdout.splitlines() if "not found" in line]
-        st.write(f"missing libs: {missing_libs if missing_libs else 'none'}")
+        test_launch = subprocess.run(
+            [chromium_path, "--headless=new", "--no-sandbox", "--disable-dev-shm-usage",
+             "--disable-gpu", "--dump-dom", "about:blank"],
+            capture_output=True, text=True, timeout=15
+        )
+        st.write(f"return code: {test_launch.returncode}")
+        st.write(f"stdout: {test_launch.stdout[:500]}")
+        st.write(f"stderr: {test_launch.stderr[:1500]}")
 
         if os.path.exists(chromium_path):
             chrome_options.binary_location = chromium_path
