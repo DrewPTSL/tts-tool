@@ -122,14 +122,18 @@ def run_webscraper(site_zones, time_periods, data_choice, custom_time=None, head
         chromium_version = subprocess.run([chromium_path, "--version"], capture_output=True, text=True)
         chromedriver_version = subprocess.run([chromedriver_path, "--version"], capture_output=True, text=True)
         test_launch = subprocess.run(
-            [chromium_path, "--headless=new", "--no-sandbox", "--disable-dev-shm-usage",
+            [chromium_path, "--headless=old", "--no-sandbox", "--disable-dev-shm-usage",
              "--disable-gpu", "--disable-setuid-sandbox", "--disable-namespace-sandbox",
              "--disable-seccomp-filter-sandbox", "--no-zygote", "--single-process",
              "--dump-dom", "about:blank"],
             capture_output=True, text=True, timeout=15
         )
-        st.write(f"return code: {test_launch.returncode}")
-        st.write(f"stderr: {test_launch.stderr[-2000:]}")
+        st.write(f"old-headless return code: {test_launch.returncode}")
+        st.write(f"old-headless stderr tail: {test_launch.stderr[-1500:]}")
+        st.write(f"stderr length: {len(test_launch.stderr)}")
+        import re
+        fatal_lines = [line for line in test_launch.stderr.splitlines() if any(k in line for k in ["FATAL", "Check failed", "Received signal", "CHECK("])]
+        st.write(f"fatal lines: {fatal_lines}")
 
         if os.path.exists(chromium_path):
             chrome_options.binary_location = chromium_path
