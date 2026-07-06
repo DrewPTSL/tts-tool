@@ -77,6 +77,14 @@ def run_webscraper(site_zones, time_periods, data_choice, custom_time=None, head
     chrome_options.add_argument("--window-size=1920,1080")
     chrome_options.add_argument("--no-sandbox")
     chrome_options.add_argument("--disable-dev-shm-usage")
+    chrome_options.add_argument("--disable-gpu")
+    chrome_options.add_argument("--disable-software-rasterizer")
+    chrome_options.add_argument("--disable-extensions")
+    chrome_options.add_argument("--single-process")
+    chrome_options.add_argument("--no-zygote")
+    chrome_options.add_argument("--disable-background-networking")
+    chrome_options.add_argument("--disable-default-apps")
+    chrome_options.add_argument("--disable-sync")
 
     download_dir = str(Path.home() / "Downloads")
     chrome_options.add_experimental_option("prefs", {
@@ -115,6 +123,10 @@ def run_webscraper(site_zones, time_periods, data_choice, custom_time=None, head
         chromedriver_version = subprocess.run([chromedriver_path, "--version"], capture_output=True, text=True)
         st.write(f"chromium version: {chromium_version.stdout.strip()} {chromium_version.stderr.strip()}")
         st.write(f"chromedriver version: {chromedriver_version.stdout.strip()} {chromedriver_version.stderr.strip()}")
+        import subprocess
+        ldd_result = subprocess.run(["ldd", chromium_path], capture_output=True, text=True)
+        missing_libs = [line for line in ldd_result.stdout.splitlines() if "not found" in line]
+        st.write(f"missing libs: {missing_libs if missing_libs else 'none'}")
 
         if os.path.exists(chromium_path):
             chrome_options.binary_location = chromium_path
