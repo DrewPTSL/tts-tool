@@ -108,6 +108,8 @@ def run_webscraper(site_zones, time_periods, data_choice, custom_time=None, head
         chromedriver_path = "/usr/bin/chromedriver"
         chromium_path = shutil.which("chromium") or shutil.which("chromium-browser") or "/usr/bin/chromium"
 
+        st.write(f"chromedriver exists: {os.path.exists(chromedriver_path)}, chromium path: {chromium_path}, chromium exists: {os.path.exists(chromium_path)}")
+
         if os.path.exists(chromium_path):
             chrome_options.binary_location = chromium_path
 
@@ -117,7 +119,7 @@ def run_webscraper(site_zones, time_periods, data_choice, custom_time=None, head
                 options=chrome_options
             )
         else:
-            st.write(f"chromedriver exists: {os.path.exists(chromedriver_path)}, chromium path: {chromium_path}, chromium exists: {os.path.exists(chromium_path)}")
+
             driver = webdriver.Chrome(options=chrome_options)
 
         # Login process
