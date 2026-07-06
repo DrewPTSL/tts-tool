@@ -123,12 +123,13 @@ def run_webscraper(site_zones, time_periods, data_choice, custom_time=None, head
         chromedriver_version = subprocess.run([chromedriver_path, "--version"], capture_output=True, text=True)
         test_launch = subprocess.run(
             [chromium_path, "--headless=new", "--no-sandbox", "--disable-dev-shm-usage",
-             "--disable-gpu", "--dump-dom", "about:blank"],
+             "--disable-gpu", "--disable-setuid-sandbox", "--disable-namespace-sandbox",
+             "--disable-seccomp-filter-sandbox", "--no-zygote", "--single-process",
+             "--dump-dom", "about:blank"],
             capture_output=True, text=True, timeout=15
         )
         st.write(f"return code: {test_launch.returncode}")
-        st.write(f"stdout: {test_launch.stdout[:500]}")
-        st.write(f"stderr: {test_launch.stderr[:1500]}")
+        st.write(f"stderr: {test_launch.stderr[-2000:]}")
 
         if os.path.exists(chromium_path):
             chrome_options.binary_location = chromium_path
