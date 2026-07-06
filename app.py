@@ -30,6 +30,7 @@ from selenium.webdriver.support import expected_conditions as EC
 from pathlib import Path
 import tempfile
 import os
+import shutil
 
 @st.cache_data(show_spinner="Loading zone data...")
 def load_zones_data(data_choice):
@@ -101,10 +102,15 @@ def run_webscraper(site_zones, time_periods, data_choice, custom_time=None, head
     driver = None
 
     try:
-        # Use the system chromedriver if it's present (e.g. in a deployed
+        # Use the system chromedriver/chromium if present (e.g. in a deployed
         # Linux container); otherwise fall back to Selenium Manager, which
         # auto-resolves the right driver for local testing on any OS.
         chromedriver_path = "/usr/bin/chromedriver"
+        chromium_path = shutil.which("chromium") or shutil.which("chromium-browser") or "/usr/bin/chromium"
+
+        if os.path.exists(chromium_path):
+            chrome_options.binary_location = chromium_path
+
         if os.path.exists(chromedriver_path):
             driver = webdriver.Chrome(
                 service=Service(chromedriver_path),
