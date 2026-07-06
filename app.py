@@ -110,6 +110,12 @@ def run_webscraper(site_zones, time_periods, data_choice, custom_time=None, head
 
         st.write(f"chromedriver exists: {os.path.exists(chromedriver_path)}, chromium path: {chromium_path}, chromium exists: {os.path.exists(chromium_path)}")
 
+        import subprocess
+        chromium_version = subprocess.run([chromium_path, "--version"], capture_output=True, text=True)
+        chromedriver_version = subprocess.run([chromedriver_path, "--version"], capture_output=True, text=True)
+        st.write(f"chromium version: {chromium_version.stdout.strip()} {chromium_version.stderr.strip()}")
+        st.write(f"chromedriver version: {chromedriver_version.stdout.strip()} {chromedriver_version.stderr.strip()}")
+
         if os.path.exists(chromium_path):
             chrome_options.binary_location = chromium_path
 
