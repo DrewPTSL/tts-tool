@@ -30,7 +30,6 @@ from selenium.webdriver.support import expected_conditions as EC
 from pathlib import Path
 import tempfile
 import os
-import shutil
 
 @st.cache_data(show_spinner="Loading zone data...")
 def load_zones_data(data_choice):
@@ -77,14 +76,6 @@ def run_webscraper(site_zones, time_periods, data_choice, custom_time=None, head
     chrome_options.add_argument("--window-size=1920,1080")
     chrome_options.add_argument("--no-sandbox")
     chrome_options.add_argument("--disable-dev-shm-usage")
-    chrome_options.add_argument("--disable-gpu")
-    chrome_options.add_argument("--disable-software-rasterizer")
-    chrome_options.add_argument("--disable-extensions")
-    chrome_options.add_argument("--single-process")
-    chrome_options.add_argument("--no-zygote")
-    chrome_options.add_argument("--disable-background-networking")
-    chrome_options.add_argument("--disable-default-apps")
-    chrome_options.add_argument("--disable-sync")
 
     download_dir = str(Path.home() / "Downloads")
     chrome_options.add_experimental_option("prefs", {
@@ -110,41 +101,16 @@ def run_webscraper(site_zones, time_periods, data_choice, custom_time=None, head
     driver = None
 
     try:
-        # Use the system chromedriver/chromium if present (e.g. in a deployed
+        # Use the system chromedriver if it's present (e.g. in a deployed
         # Linux container); otherwise fall back to Selenium Manager, which
         # auto-resolves the right driver for local testing on any OS.
         chromedriver_path = "/usr/bin/chromedriver"
-        chromium_path = shutil.which("chromium") or shutil.which("chromium-browser") or "/usr/bin/chromium"
-
-        st.write(f"chromedriver exists: {os.path.exists(chromedriver_path)}, chromium path: {chromium_path}, chromium exists: {os.path.exists(chromium_path)}")
-
-        import subprocess
-        chromium_version = subprocess.run([chromium_path, "--version"], capture_output=True, text=True)
-        chromedriver_version = subprocess.run([chromedriver_path, "--version"], capture_output=True, text=True)
-        test_launch = subprocess.run(
-            [chromium_path, "--headless=old", "--no-sandbox", "--disable-dev-shm-usage",
-             "--disable-gpu", "--disable-setuid-sandbox", "--disable-namespace-sandbox",
-             "--disable-seccomp-filter-sandbox", "--no-zygote", "--single-process",
-             "--dump-dom", "about:blank"],
-            capture_output=True, text=True, timeout=15
-        )
-        st.write(f"old-headless return code: {test_launch.returncode}")
-        st.write(f"old-headless stderr tail: {test_launch.stderr[-1500:]}")
-        st.write(f"stderr length: {len(test_launch.stderr)}")
-        import re
-        fatal_lines = [line for line in test_launch.stderr.splitlines() if any(k in line for k in ["FATAL", "Check failed", "Received signal", "CHECK("])]
-        st.write(f"fatal lines: {fatal_lines}")
-
-        if os.path.exists(chromium_path):
-            chrome_options.binary_location = chromium_path
-
         if os.path.exists(chromedriver_path):
             driver = webdriver.Chrome(
                 service=Service(chromedriver_path),
                 options=chrome_options
             )
         else:
-
             driver = webdriver.Chrome(options=chrome_options)
 
         # Login process
