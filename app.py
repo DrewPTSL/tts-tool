@@ -29,7 +29,29 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from pathlib import Path
 import tempfile
+
 import os
+import zipfile
+
+## Webscraper Set-up
+
+CHROME_DIR = "/home/appuser/chrome-for-testing"
+CHROME_VERSION = "126.0.6478.126" 
+
+def ensure_chrome_installed():
+    if os.path.exists(f"{CHROME_DIR}/chrome-linux64/chrome"):
+        return
+    os.makedirs(CHROME_DIR, exist_ok=True)
+    base = f"https://storage.googleapis.com/chrome-for-testing-public/{CHROME_VERSION}/linux64"
+    for name in ["chrome-linux64.zip", "chromedriver-linux64.zip"]:
+        r = requests.get(f"{base}/{name}")
+        path = f"{CHROME_DIR}/{name}"
+        with open(path, "wb") as f:
+            f.write(r.content)
+        with zipfile.ZipFile(path) as z:
+            z.extractall(CHROME_DIR)
+
+## Streamlit Application
 
 @st.cache_data(show_spinner="Loading zone data...")
 def load_zones_data(data_choice):
@@ -102,17 +124,12 @@ def run_webscraper(site_zones, time_periods, data_choice, custom_time=None, head
     driver = None
 
     try:
-        # Use the system chromedriver if it's present (e.g. in a deployed
-        # Linux container); otherwise fall back to Selenium Manager, which
-        # auto-resolves the right driver for local testing on any OS.
-        chromedriver_path = "/usr/bin/chromedriver"
-        if os.path.exists(chromedriver_path):
-            driver = webdriver.Chrome(
-                service=Service(chromedriver_path),
-                options=chrome_options
-            )
-        else:
-            driver = webdriver.Chrome(options=chrome_options)
+        ensure_chrome_installed()
+        chrome_options.binary_location = f"{CHROME_DIR}/chrome-linux64/chrome"
+        driver = webdriver.Chrome(
+            service=Service(f"{CHROME_DIR}/chromedriver-linux64/chromedriver"),
+            options=chrome_options
+        )
 
         # Login process
         update_status("Logging into TTS system...")
