@@ -51,6 +51,9 @@ def ensure_chrome_installed():
         with zipfile.ZipFile(path) as z:
             z.extractall(CHROME_DIR)
 
+    os.chmod(f"{CHROME_DIR}/chrome-linux64/chrome", 0o755)
+    os.chmod(f"{CHROME_DIR}/chromedriver-linux64/chromedriver", 0o755)
+
 ## Streamlit Application
 
 @st.cache_data(show_spinner="Loading zone data...")
