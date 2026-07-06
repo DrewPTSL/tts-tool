@@ -117,6 +117,7 @@ def run_webscraper(site_zones, time_periods, data_choice, custom_time=None, head
                 options=chrome_options
             )
         else:
+            st.write(f"chromedriver exists: {os.path.exists(chromedriver_path)}, chromium path: {chromium_path}, chromium exists: {os.path.exists(chromium_path)}")
             driver = webdriver.Chrome(options=chrome_options)
 
         # Login process
