@@ -76,6 +76,7 @@ def run_webscraper(site_zones, time_periods, data_choice, custom_time=None, head
     chrome_options.add_argument("--window-size=1920,1080")
     chrome_options.add_argument("--no-sandbox")
     chrome_options.add_argument("--disable-dev-shm-usage")
+    chrome_options.binary_location = "/usr/bin/chromium"
 
     download_dir = str(Path.home() / "Downloads")
     chrome_options.add_experimental_option("prefs", {
