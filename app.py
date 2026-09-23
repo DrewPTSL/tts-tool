@@ -550,7 +550,7 @@ if valid_coords:
 
         # Only display the map if toggle is on
         if show_map:
-            m = folium.Map(location=[site_lat, site_lon],zoom_start=12,width="100%",tiles=f"https://{{s}}.basemaps.cartocdn.com/rastertiles/voyager/{{z}}/{{x}}/{{y}}.png?api_key={carto_key}",attr="© OpenStreetMap contributors © CARTO")
+            m = folium.Map(location=[site_lat, site_lon],zoom_start=12,width="100%",tiles=f"https://{{s}}.basemaps.cartocdn.com/rastertiles/voyager/{{z}}/{{x}}/{{y}}.png?api_key={st.secrets['CARTO_API_KEY']}", attr="© OpenStreetMap contributors © CARTO")
 
             # Add site zone marker
             sitezone_layer = folium.FeatureGroup(name="Site Zone Marker", show=True)
