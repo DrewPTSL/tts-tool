@@ -66,7 +66,8 @@ def get_route(start_coords, end_coords):
 def create_map(start_coords, end_coords, route_data):
     center_lat = (start_coords[0] + end_coords[0]) / 2
     center_lon = (start_coords[1] + end_coords[1]) / 2
-    m = folium.Map(location=[center_lat, center_lon], zoom_start=12, tiles=f"https://{{s}}.basemaps.cartocdn.com/light_all/{{z}}/{{x}}/{{y}}.png?api_key={st.secrets['CARTO_API_KEY']}", attr="© OpenStreetMap contributors © CARTO", width="100%")
+    m = folium.Map(location=[center_lat, center_lon], zoom_start=12, tiles=None)
+    folium.TileLayer(tiles=f"https://{{s}}.basemaps.cartocdn.com/rastertiles/voyager/{{z}}/{{x}}/{{y}}.png?key={st.secrets['CARTO_API_KEY']}", attr="© OpenStreetMap contributors © CARTO", name="CartoDB Voyager").add_to(m)
 
     draw = plugins.Draw(
         draw_options={
