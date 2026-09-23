@@ -550,7 +550,8 @@ if valid_coords:
 
         # Only display the map if toggle is on
         if show_map:
-            m = folium.Map(location=[site_lat, site_lon],zoom_start=12,width="100%",tiles=f"https://{{s}}.basemaps.cartocdn.com/rastertiles/voyager/{{z}}/{{x}}/{{y}}.png?key={st.secrets['CARTO_API_KEY']}", attr="© OpenStreetMap contributors © CARTO")
+            m = folium.Map(location=[site_lat, site_lon],zoom_start=12,width="100%",tiles=None)
+            folium.TileLayer(f"https://{{s}}.basemaps.cartocdn.com/rastertiles/voyager/{{z}}/{{x}}/{{y}}.png?key={st.secrets['CARTO_API_KEY']}", name="CartoDB Voyager", attr="© OpenStreetMap contributors © CARTO").add_to(m)
 
             # Add site zone marker
             sitezone_layer = folium.FeatureGroup(name="Site Zone Marker", show=True)
@@ -1378,8 +1379,8 @@ try:
                                             """Scale route thickness between min and max weight based on traffic volume"""
                                             return min_weight + (max_weight - min_weight) * (total / max_traffic)
 
-                                        route_map = folium.Map(location=[site_lat, site_lon], zoom_start=10, tiles=f"https://{{s}}.basemaps.cartocdn.com/rastertiles/voyager/{{z}}/{{x}}/{{y}}.png?key={st.secrets['CARTO_API_KEY']}", attr="© OpenStreetMap contributors © CARTO")
-
+                                        route_map = folium.Map(location=[site_lat, site_lon], zoom_start=10, tiles=None)
+                                        folium.TileLayer(f"https://{{s}}.basemaps.cartocdn.com/rastertiles/voyager/{{z}}/{{x}}/{{y}}.png?key={st.secrets['CARTO_API_KEY']}", name="CartoDB Voyager", attr="© OpenStreetMap contributors © CARTO").add_to(route_map)
                                         # Create feature groups
                                         site_layer = folium.FeatureGroup(name="Site Location", show=True)
                                         poi_layer = folium.FeatureGroup(name="Points of Interest", show=True)
